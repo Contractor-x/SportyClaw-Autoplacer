@@ -1,12 +1,5 @@
-import os
 import logging
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +9,11 @@ SPORTYBET_PASSWORD = os.getenv("SPORTYBET_PASSWORD")
 
 
 def get_driver():
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    from webdriver_manager.chrome import ChromeDriverManager
+
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -38,6 +36,8 @@ def place_bet_with_code(code: str) -> tuple[bool, str]:
     driver = None
     try:
         driver = get_driver()
+        from selenium.webdriver.support.ui import WebDriverWait
+
         wait = WebDriverWait(driver, 15)
 
         logger.info("Navigating to SportyBet...")
@@ -61,6 +61,9 @@ def place_bet_with_code(code: str) -> tuple[bool, str]:
 
 
 def _login(driver, wait):
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+
     try:
         login_btn = wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//button[contains(text(),'Login')] | //a[contains(text(),'Login')]")
@@ -93,6 +96,9 @@ def _login(driver, wait):
 
 
 def _enter_booking_code(driver, wait, code: str) -> tuple[bool, str]:
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+
     try:
         booking_selectors = [
             "//a[contains(text(),'Booking Code')]",
