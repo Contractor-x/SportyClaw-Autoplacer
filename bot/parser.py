@@ -27,6 +27,7 @@ IGNORE_WORDS = {
     "HAS", "HIM", "HIS", "HOW", "ITS", "NOW", "OLD", "SEE",
     "TWO", "WHO", "BOY", "DID", "ITS", "LET", "PUT", "SAY",
     "TOO", "USE", "WIN", "BET", "ODD", "YES", "MAN",
+    "BOOKING", "CODE",
 }
 
 
@@ -42,7 +43,7 @@ def extract_bet_code(text: str) -> str | None:
     text = text.strip()
 
     for pattern in PATTERNS:
-        matches = re.findall(pattern, text)
+        matches = re.findall(pattern, text, flags=re.IGNORECASE)
         for match in matches:
             code = match.upper()
             if code in IGNORE_WORDS:
