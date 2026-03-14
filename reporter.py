@@ -3,7 +3,6 @@ import logging
 from datetime import datetime
 from telegram import Bot
 from sportybet.client import get_driver, _login, SPORTYBET_URL
-from main import get_daily_stats
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +71,6 @@ def fetch_account_summary() -> dict:
             driver.quit()
 
 
-def get_daily_bet_stats() -> dict:
-    """Returns bet stats tracked in memory for today."""
-    return get_daily_stats()
-
-
 def format_report(account: dict, stats: dict) -> str:
     today = datetime.now().strftime("%A, %d %B %Y")
 
@@ -100,14 +94,13 @@ def format_report(account: dict, stats: dict) -> str:
     return "\n".join(lines)
 
 
-async def send_daily_report():
+async def send_daily_report(stats: dict):
     if not OWNER_CHAT_ID:
         logger.warning("OWNER_CHAT_ID not set — skipping daily report.")
         return
 
     try:
         account = fetch_account_summary()
-        stats = get_daily_bet_stats()
         message = format_report(account, stats)
 
         bot = Bot(token=BOT_TOKEN)
