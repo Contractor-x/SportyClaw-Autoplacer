@@ -1,6 +1,9 @@
 # SportyClaw Autoplacer
 SportyClaw Autoplacer is a Telegram-driven SportyBet automation suite that pulls booking codes from your chats, runs Selenium to place bets, and keeps your bankroll sacred by only touching one quarter of the starting balance every day.
 
+# Pipeline
+![SportyBet Bot Pipeline](sportybet_bot_pipeline.svg)
+
 ## Core features
 
 - **Telegram listener** (`main.py`, `bot/listener.py`): polls Telegram for text updates, ignores unauthorized senders, extracts SportyBet booking codes via `bot/parser.py`, and invokes `sportybet.client.place_bet_with_code` while checking the bankroll quota. Successful bets include a quick bankroll countdown in the reply; if the day’s ready quarters are gone, it replies with an exhaustion warning.
@@ -32,3 +35,6 @@ SportyClaw Autoplacer is a Telegram-driven SportyBet automation suite that pulls
 - The parser ignores common words (`BOOKING`, `CODE`, etc.) and runs case-insensitive matching to avoid false positives. Adjust the regexes in `bot/parser.py` if your booking-code format differs.
 
 Want CLI helpers or a dashboard? Just ask—this README is as flexible as the bot’s bankroll.
+
+
+ 
