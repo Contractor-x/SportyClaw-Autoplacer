@@ -2,11 +2,12 @@ import logging
 import os
 import asyncio
 from datetime import time as dtime
-from reporter import send_daily_report
+import reporter
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 from dotenv import load_dotenv
 from bot.commands import make_health_handler
 from health import start_health_server
+from bankroll import initialize_from_amount, parse_balance, reset as reset_bankroll
 
 load_dotenv()
 
@@ -42,6 +43,19 @@ def reset_daily_stats():
     }
 
 
+def sync_refresh_bankroll():
+    try:
+        account = reporter.fetch_account_summary()
+        balance = parse_balance(account.get("balance"))
+        initialize_from_amount(balance)
+    except Exception as exc:
+        logger.exception("Failed to refresh bankroll: %s", exc)
+
+
+async def refresh_bankroll_async():
+    await asyncio.to_thread(sync_refresh_bankroll)
+
+
 def parse_report_time() -> dtime:
     hour, minute = REPORT_TIME.strip().split(":")
     return dtime(int(hour), int(minute), 0)
@@ -51,11 +65,19 @@ def get_daily_stats() -> dict:
     return daily_stats
 
 
+async def run_daily_reset(_: object):
+    reset_daily_stats()
+    reset_bankroll()
+    await refresh_bankroll_async()
+
+
 def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN is not set.")
 
     start_health_server()
+
+    sync_refresh_bankroll()
 
     report_time = parse_report_time()
     logger.info(f"Daily report scheduled at {REPORT_TIME} WAT")
@@ -64,14 +86,14 @@ def main():
 
     # Schedule daily report job
     app.job_queue.run_daily(
-        callback=lambda ctx: asyncio.ensure_future(send_daily_report()),
+        callback=lambda ctx: asyncio.ensure_future(reporter.send_daily_report(dict(daily_stats))),
         time=report_time,
         name="daily_report",
     )
 
     # Schedule daily stats reset at midnight
     app.job_queue.run_daily(
-        callback=lambda ctx: reset_daily_stats(),
+        callback=lambda ctx: asyncio.ensure_future(run_daily_reset(ctx)),
         time=dtime(0, 0, 0),
         name="daily_reset",
     )
