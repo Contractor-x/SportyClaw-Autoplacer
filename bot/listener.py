@@ -1,10 +1,27 @@
 import logging
 import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
+from dotenv import load_dotenv
+
+try:
+    from telegram import Update
+    from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
+except ModuleNotFoundError:  # pragma: no cover - fallback for lightweight environments
+    class Update:  # type: ignore[misc]
+        pass
+
+    class ContextTypes:  # type: ignore[misc]
+        DEFAULT_TYPE = object
+
+    class _DummyFilters:
+        TEXT = None
+        COMMAND = None
+
+    filters = _DummyFilters()
+    ApplicationBuilder = None  # type: ignore[misc]
+    MessageHandler = lambda *args, **kwargs: None  # type: ignore[misc]
+
 from .parser import extract_bet_code
 from sportybet.client import place_bet_with_code
-from dotenv import load_dotenv
 
 load_dotenv()
 
