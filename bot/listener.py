@@ -22,6 +22,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for lightweight envir
 
 from .parser import extract_bet_code
 from sportybet.client import place_bet_with_code
+from bankroll import has_available_chunks, reserve_chunk, release_chunk, get_state
 
 load_dotenv()
 
@@ -55,15 +56,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info("No bet code found in message.")
         return
 
+    if not has_available_chunks():
+        logger.info("Bankroll exhausted for today.")
+        await message.reply_text("Bankroll depleted for today. Use /health to confirm and try again after the daily reset.")
+        return
+
+    chunk_value = reserve_chunk()
+    if chunk_value is None:
+        logger.info("Bankroll not initialized yet.")
+        await message.reply_text("Bankroll is being refreshed—please wait a moment before placing a bet.")
+        return
+
     logger.info(f"Bet code detected: {code} — placing bet...")
 
     success, result_message = place_bet_with_code(code)
 
     if success:
         logger.info(f"Bet placed successfully: {result_message}")
-        await message.reply_text(f"✅ Bet placed! Code: {code}\n{result_message}")
+        state = get_state()
+        await message.reply_text(
+            f"✅ Bet placed! Code: {code}\n{result_message}\n"
+            f"Bankroll quarters left: {state['chunks_available']}/{state['total_chunks']}"
+        )
     else:
         logger.error(f"Failed to place bet: {result_message}")
+        release_chunk()
         await message.reply_text(f"❌ Failed to place bet for code: {code}\nReason: {result_message}")
 
 
