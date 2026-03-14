@@ -1,0 +1,14 @@
+[phases.setup]
+nixPkgs = [
+  "python311",
+  "chromium",
+  "chromedriver",
+]
+
+[phases.install]
+cmds = [
+  "pip install -r requirements.txt",
+]
+
+[start]
+cmd = "python main.py"
