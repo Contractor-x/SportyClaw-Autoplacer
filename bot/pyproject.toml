@@ -1,0 +1,28 @@
+[project]
+name = "sportybet-bot"
+version = "1.0.0"
+description = "Telegram bot that auto-places SportyBet bets from group booking codes"
+requires-python = ">=3.11"
+
+dependencies = [
+    "python-telegram-bot==21.5",
+    "playwright==1.44.0",
+    "python-dotenv==1.0.1",
+    "greenlet==3.0.3",
+]
+
+[project.scripts]
+start = "main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.23",
+]
