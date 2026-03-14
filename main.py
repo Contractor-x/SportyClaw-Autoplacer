@@ -3,8 +3,10 @@ import os
 import asyncio
 from datetime import time as dtime
 from reporter import send_daily_report
-from telegram.ext import ApplicationBuilder
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 from dotenv import load_dotenv
+from bot.commands import make_health_handler
+from health import start_health_server
 
 load_dotenv()
 
@@ -45,9 +47,15 @@ def parse_report_time() -> dtime:
     return dtime(int(hour), int(minute), 0)
 
 
+def get_daily_stats() -> dict:
+    return daily_stats
+
+
 def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN is not set.")
+
+    start_health_server()
 
     report_time = parse_report_time()
     logger.info(f"Daily report scheduled at {REPORT_TIME} WAT")
@@ -69,8 +77,8 @@ def main():
     )
 
     from bot.listener import handle_message
-    from telegram.ext import MessageHandler, filters
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("health", make_health_handler(get_daily_stats)))
 
     logger.info("Bot is running...")
     app.run_polling()
