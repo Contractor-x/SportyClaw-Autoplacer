@@ -34,7 +34,7 @@ SportyClaw Autoplacer is a Telegram-driven SportyBet automation suite that pulls
 - Selenium/Telegram packages may not be installed on every machine; use a virtualenv if the system rejects `pip install` in this repo.
 - The parser ignores common words (`BOOKING`, `CODE`, etc.) and runs case-insensitive matching to avoid false positives. Adjust the regexes in `bot/parser.py` if your booking-code format differs.
 
-Want CLI helpers or a dashboard? Just ask—this README is as flexible as the bot’s bankroll.
+
 
 
  
