@@ -84,19 +84,23 @@ def main():
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Schedule daily report job
-    app.job_queue.run_daily(
-        callback=lambda ctx: asyncio.ensure_future(reporter.send_daily_report(dict(daily_stats))),
-        time=report_time,
-        name="daily_report",
-    )
+    if app.job_queue:
+        app.job_queue.run_daily(
+            callback=lambda ctx: asyncio.ensure_future(reporter.send_daily_report(dict(daily_stats))),
+            time=report_time,
+            name="daily_report",
+        )
 
-    # Schedule daily stats reset at midnight
-    app.job_queue.run_daily(
-        callback=lambda ctx: asyncio.ensure_future(run_daily_reset(ctx)),
-        time=dtime(0, 0, 0),
-        name="daily_reset",
-    )
+        app.job_queue.run_daily(
+            callback=lambda ctx: asyncio.ensure_future(run_daily_reset(ctx)),
+            time=dtime(0, 0, 0),
+            name="daily_reset",
+        )
+    else:
+        logger.warning(
+            "JobQueue is unavailable; skip scheduling daily report/reset. "
+            "Install python-telegram-bot[job-queue] to enable these features."
+        )
 
     from bot.listener import handle_message
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
