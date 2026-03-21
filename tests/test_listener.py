@@ -11,7 +11,7 @@ async def test_handle_message_places_bet(monkeypatch):
     monkeypatch.setattr(listener, "reserve_chunk", lambda: 100)
     monkeypatch.setattr(listener, "get_state", lambda: {"chunks_available": 3, "total_chunks": 4})
     update = create_mock_update("Booking: ABC123", user_id=42)
-    monkeypatch.setattr(listener, "place_bet_with_code", lambda code: (True, "ok"))
+    monkeypatch.setattr(listener, "place_bet_with_code", lambda code, stake=None: (True, "ok"))
 
     await listener.handle_message(update, None)
 
