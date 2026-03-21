@@ -28,12 +28,26 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ALLOWED_USER_ID = os.getenv("ALLOWED_USER_ID")
+ALLOWED_USER_IDS = os.getenv("ALLOWED_USER_IDS", "")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+
+def _build_allowed_user_ids() -> set[str]:
+    allowed = set()
+    if ALLOWED_USER_ID:
+        allowed.add(ALLOWED_USER_ID.strip())
+
+    for raw in ALLOWED_USER_IDS.split(","):
+        trimmed = raw.strip()
+        if trimmed:
+            allowed.add(trimmed)
+
+    return allowed
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -47,7 +61,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"Message from {sender_name} ({sender_id}): {text}")
 
-    if ALLOWED_USER_ID and sender_id != ALLOWED_USER_ID:
+    allowed_ids = _build_allowed_user_ids()
+    if allowed_ids and sender_id not in allowed_ids:
         logger.info(f"Ignoring message from unauthorized user {sender_id}")
         return
 
