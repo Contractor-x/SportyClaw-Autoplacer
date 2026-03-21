@@ -69,7 +69,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"Bet code detected: {code} — placing bet...")
 
-    success, result_message = place_bet_with_code(code)
+    success, result_message = place_bet_with_code(code, chunk_value)
 
     if success:
         logger.info(f"Bet placed successfully: {result_message}")
