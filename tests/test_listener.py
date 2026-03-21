@@ -28,3 +28,19 @@ async def test_handle_message_ignores_unauthorized(monkeypatch):
     await listener.handle_message(update, None)
 
     assert len(update.message.reply_texts) == replies_before
+
+
+@pytest.mark.asyncio
+async def test_handle_message_accepts_additional_authorized_user(monkeypatch):
+    monkeypatch.setattr(listener, "ALLOWED_USER_ID", "")
+    monkeypatch.setattr(listener, "ALLOWED_USER_IDS", "42, 99")
+    monkeypatch.setattr(listener, "has_available_chunks", lambda: True)
+    monkeypatch.setattr(listener, "reserve_chunk", lambda: 100)
+    monkeypatch.setattr(listener, "get_state", lambda: {"chunks_available": 3, "total_chunks": 4})
+    update = create_mock_update("Booking: ABC123", user_id=42)
+    monkeypatch.setattr(listener, "place_bet_with_code", lambda code, stake=None: (True, "ok"))
+
+    await listener.handle_message(update, None)
+
+    assert update.message.reply_texts
+    assert "✅" in update.message.reply_texts[0]
