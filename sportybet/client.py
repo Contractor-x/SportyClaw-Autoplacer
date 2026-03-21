@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,12 @@ def get_driver():
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     )
-    service = Service(ChromeDriverManager().install())
+    driver_path = ChromeDriverManager().install()
+    service = Service(_resolve_driver_executable(driver_path))
     return webdriver.Chrome(service=service, options=options)
 
 
-def place_bet_with_code(code: str) -> tuple[bool, str]:
+def place_bet_with_code(code: str, stake_amount: float | None = None) -> tuple[bool, str]:
     if not SPORTYBET_PHONE or not SPORTYBET_PASSWORD:
         return False, "SportyBet credentials are not set in environment variables."
 
@@ -47,7 +49,7 @@ def place_bet_with_code(code: str) -> tuple[bool, str]:
         _login(driver, wait)
 
         logger.info(f"Entering booking code: {code}")
-        result = _enter_booking_code(driver, wait, code)
+        result = _enter_booking_code(driver, wait, code, stake_amount)
 
         return result
 
@@ -87,7 +89,6 @@ def _login(driver, wait):
         ))
         submit_btn.click()
 
-        import time
         time.sleep(3)
         logger.info("Login submitted.")
 
@@ -95,7 +96,7 @@ def _login(driver, wait):
         raise Exception(f"Login failed: {e}")
 
 
-def _enter_booking_code(driver, wait, code: str) -> tuple[bool, str]:
+def _enter_booking_code(driver, wait, code: str, stake_amount: float | None) -> tuple[bool, str]:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support import expected_conditions as EC
 
@@ -121,8 +122,11 @@ def _enter_booking_code(driver, wait, code: str) -> tuple[bool, str]:
         if not clicked:
             driver.get(f"{SPORTYBET_URL}#booking-code")
 
-        import time
         time.sleep(2)
+
+        _enable_one_cut(driver, wait)
+        if stake_amount is not None and stake_amount > 0:
+            _set_stake_amount(driver, wait, stake_amount)
 
         code_input_selectors = [
             "//input[contains(@placeholder,'code') or contains(@placeholder,'Code')]",
@@ -179,3 +183,86 @@ def _enter_booking_code(driver, wait, code: str) -> tuple[bool, str]:
 
     except Exception as e:
         raise Exception(f"Booking code entry failed: {e}")
+
+
+def _enable_one_cut(driver, wait) -> bool:
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+
+    selectors = [
+        "//button[contains(translate(normalize-space(.), 'ONE CUT', 'one cut'), 'one cut')]",
+        "//label[contains(translate(normalize-space(.), 'ONE CUT', 'one cut'), 'one cut')]",
+        "//span[contains(translate(normalize-space(.), 'ONE CUT', 'one cut'), 'one cut')]/ancestor::button[1]",
+        "//div[contains(translate(normalize-space(.), 'ONE CUT', 'one cut'), 'one cut')]//input",
+        "//div[contains(@class, 'one-cut') or contains(@class, 'one_cut') or contains(@data-testid, 'oneCut')]",
+    ]
+
+    for selector in selectors:
+        try:
+            toggle = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", toggle)
+            toggle.click()
+            logger.info("One Cut option activated via %s", selector)
+            time.sleep(0.5)
+            return True
+        except Exception:
+            continue
+
+    logger.info("One Cut option not present or already active; continuing without toggling.")
+    return False
+
+
+def _set_stake_amount(driver, wait, amount: float) -> bool:
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+    from selenium.webdriver.support import expected_conditions as EC
+
+    formatted = f"{amount:.2f}".rstrip("0").rstrip(".")
+    selectors = [
+        "//input[contains(translate(@placeholder, 'STAKE', 'stake'), 'stake')]",
+        "//label[contains(translate(normalize-space(.), 'STAKE', 'stake'), 'stake')]/following::input[1]",
+        "//input[@name='stake']",
+        "//input[contains(@class, 'stake')]",
+        "//input[contains(@id, 'stake')]",
+        "//input[@aria-label='Stake']",
+        "//input[@type='number']",
+    ]
+
+    for selector in selectors:
+        try:
+            stake_input = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", stake_input)
+            stake_input.click()
+            stake_input.send_keys(Keys.CONTROL, "a")
+            stake_input.send_keys(formatted)
+            stake_input.send_keys(Keys.TAB)
+            logger.info("Stake set to %s via %s", formatted, selector)
+            time.sleep(0.5)
+            return True
+        except Exception:
+            continue
+
+    logger.info("Stake input not located; leaving default stake amount.")
+    return False
+
+
+def _resolve_driver_executable(path: str) -> str:
+    basename = os.path.basename(path).lower()
+    if basename.startswith("chromedriver"):
+        return path
+
+    directory = os.path.dirname(path)
+    try:
+        candidates = sorted(os.listdir(directory))
+    except OSError:
+        raise RuntimeError(f"Unable to inspect driver directory: {directory}")
+
+    for candidate in candidates:
+        candidate_lower = candidate.lower()
+        if not candidate_lower.startswith("chromedriver"):
+            continue
+        resolved = os.path.join(directory, candidate)
+        if os.path.isfile(resolved):
+            return resolved
+
+    raise RuntimeError(f"Could not locate the ChromeDriver binary in {directory} (wrote {path})")
