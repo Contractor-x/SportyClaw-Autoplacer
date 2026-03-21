@@ -13,7 +13,7 @@ SportyClaw Autoplacer is a Telegram-driven SportyBet automation suite that pulls
 
 ## Running the bot
 
-1. Populate `.env` with at least `BOT_TOKEN`, `OWNER_CHAT_ID`, `ALLOWED_USER_ID`, and the SportyBet credentials (`SPORTYBET_PHONE`, `SPORTYBET_PASSWORD`).
+1. Populate `.env` with at least `BOT_TOKEN`, `OWNER_CHAT_ID`, `ALLOWED_USER_ID`, and the SportyBet credentials (`SPORTYBET_PHONE`, `SPORTYBET_PASSWORD`). If you want to authorize additional Telegram users (e.g., people in other groups), set `ALLOWED_USER_IDS` to a comma-separated list of their numeric IDs; the listener accepts messages from anyone named in `ALLOWED_USER_ID` or `ALLOWED_USER_IDS`.
 2. Install dependencies (ideally inside a virtualenv) with `python -m pip install -r requirements.txt`.
 3. Run `python main.py`; the health server and Telegram polling start automatically.
 4. Send booking codes through Telegram (or via the Telegram Bot API/ Postman) and keep an eye on `/health` to monitor the bankroll/quota breakdown.
