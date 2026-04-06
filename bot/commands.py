@@ -18,8 +18,11 @@ def make_health_handler(get_daily_stats: Callable[[], dict]):
             f"lost={stats['lost']} ongoing={stats['ongoing']}\n"
             f"Profit: ₦{stats['profit']:,.2f} / Loss: ₦{stats['loss']:,.2f}\n"
             f"Starting balance: ₦{bankroll_state['starting_balance']:,.2f}\n"
-            f"Available quarters: {bankroll_state['chunks_available']}/"
-            f"{bankroll_state['total_chunks']} (₦{bankroll_state['chunk_value']:,.2f} each)"
+            f"Daily allocation: ₦{bankroll_state['allocation_remaining']:,.2f} remaining / "
+            f"₦{bankroll_state['allocation_total']:,.2f} total\n"
+            f"Bets left today: {bankroll_state['bets_remaining']}/"
+            f"{bankroll_state['max_bets_per_day']}\n"
+            f"Reserve balance: ₦{bankroll_state['reserve']:,.2f}"
         )
         logger.info("Health command replied with current stats.")
         await update.message.reply_text(text)
