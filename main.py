@@ -4,6 +4,7 @@ import asyncio
 from datetime import time as dtime
 import reporter
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+from telegram.request import HTTPXRequest
 from dotenv import load_dotenv
 from bot.commands import make_health_handler
 from health import start_health_server
@@ -83,7 +84,13 @@ def main():
     report_time = parse_report_time()
     logger.info(f"Daily report scheduled at {REPORT_TIME} WAT")
 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    request = HTTPXRequest(
+        connect_timeout=20,
+        read_timeout=20,
+        write_timeout=20,
+        pool_timeout=20,
+    )
+    app = ApplicationBuilder().token(BOT_TOKEN).request(request).build()
 
     if app.job_queue:
         app.job_queue.run_daily(
@@ -106,6 +113,7 @@ def main():
     from bot.listener import handle_message
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("health", make_health_handler(get_daily_stats)))
+    app.add_error_handler(lambda update, context: logger.exception("Unhandled error", exc_info=context.error))
 
     logger.info("Bot is running...")
     app.run_polling()
