@@ -21,12 +21,15 @@ def get_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+    chrome_bin = os.getenv("CHROME_BIN")
+    if chrome_bin:
+        options.binary_location = chrome_bin
     options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     )
-    driver_path = ChromeDriverManager().install()
+    driver_path = os.getenv("CHROMEDRIVER_PATH") or ChromeDriverManager().install()
     service = Service(_resolve_driver_executable(driver_path))
     return webdriver.Chrome(service=service, options=options)
 
