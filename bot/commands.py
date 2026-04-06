@@ -19,6 +19,7 @@ def make_health_handler(get_daily_stats: Callable[[], dict]):
             f"Bets today: placed={stats['placed']} won={stats['won']} "
             f"lost={stats['lost']} ongoing={stats['ongoing']}\n"
             f"Profit: ₦{stats['profit']:,.2f} / Loss: ₦{stats['loss']:,.2f}\n"
+            f"Account balance: ₦{bankroll_state['current_balance']:,.2f}\n"
             f"Starting balance: ₦{bankroll_state['starting_balance']:,.2f}\n"
             f"Daily allocation: ₦{bankroll_state['allocation_remaining']:,.2f} remaining / "
             f"₦{bankroll_state['allocation_total']:,.2f} total\n"
