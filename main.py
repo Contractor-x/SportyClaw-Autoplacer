@@ -8,7 +8,7 @@ from telegram.request import HTTPXRequest
 from dotenv import load_dotenv
 from bot.commands import make_health_handler
 from health import start_health_server
-from bankroll import initialize_from_amount, parse_balance, reset as reset_bankroll
+from bankroll import initialize_from_amount, update_balance_from_raw, reset as reset_bankroll
 
 load_dotenv()
 
@@ -48,7 +48,7 @@ def reset_daily_stats():
 def sync_refresh_bankroll():
     try:
         account = reporter.fetch_account_summary()
-        balance = parse_balance(account.get("balance"))
+        balance = update_balance_from_raw(account.get("balance"))
         initialize_from_amount(balance, max_bets_per_day=MAX_BETS_PER_DAY)
     except Exception as exc:
         logger.exception("Failed to refresh bankroll: %s", exc)
