@@ -5,8 +5,10 @@ import time
 logger = logging.getLogger(__name__)
 
 SPORTYBET_URL = "https://www.sportybet.com/ng/"
-SPORTYBET_PHONE = os.getenv("SPORTYBET_PHONE")
-SPORTYBET_PASSWORD = os.getenv("SPORTYBET_PASSWORD")
+
+
+def _get_credentials() -> tuple[str | None, str | None]:
+    return os.getenv("SPORTYBET_PHONE"), os.getenv("SPORTYBET_PASSWORD")
 
 
 def get_driver():
@@ -30,12 +32,15 @@ def get_driver():
         "Chrome/120.0.0.0 Safari/537.36"
     )
     driver_path = os.getenv("CHROMEDRIVER_PATH") or ChromeDriverManager().install()
-    service = Service(_resolve_driver_executable(driver_path))
+    driver_path = _resolve_driver_executable(driver_path)
+    _ensure_executable(driver_path)
+    service = Service(driver_path)
     return webdriver.Chrome(service=service, options=options)
 
 
 def place_bet_with_code(code: str, stake_amount: float | None = None) -> tuple[bool, str]:
-    if not SPORTYBET_PHONE or not SPORTYBET_PASSWORD:
+    phone, password = _get_credentials()
+    if not phone or not password:
         return False, "SportyBet credentials are not set in environment variables."
 
     driver = None
@@ -70,6 +75,10 @@ def _login(driver, wait):
     from selenium.webdriver.support import expected_conditions as EC
 
     try:
+        phone, password = _get_credentials()
+        if not phone or not password:
+            raise Exception("SportyBet credentials are missing. Set SPORTYBET_PHONE and SPORTYBET_PASSWORD.")
+
         login_btn = wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//button[contains(text(),'Login')] | //a[contains(text(),'Login')]")
         ))
@@ -79,13 +88,13 @@ def _login(driver, wait):
             (By.XPATH, "//input[@type='tel' or @name='phone' or contains(@placeholder,'Phone')]")
         ))
         phone_input.clear()
-        phone_input.send_keys(SPORTYBET_PHONE)
+        phone_input.send_keys(phone)
 
         password_input = wait.until(EC.presence_of_element_located(
             (By.XPATH, "//input[@type='password']")
         ))
         password_input.clear()
-        password_input.send_keys(SPORTYBET_PASSWORD)
+        password_input.send_keys(password)
 
         submit_btn = wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//button[@type='submit' or contains(text(),'Login')]")
@@ -269,3 +278,10 @@ def _resolve_driver_executable(path: str) -> str:
             return resolved
 
     raise RuntimeError(f"Could not locate the ChromeDriver binary in {directory} (wrote {path})")
+
+
+def _ensure_executable(path: str) -> None:
+    try:
+        os.chmod(path, 0o755)
+    except OSError:
+        logger.exception("Failed to set executable permissions on %s", path)
