@@ -1,17 +1,29 @@
 import asyncio
 import logging
+import os
 from typing import Callable
 from telegram.error import TimedOut
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bankroll import get_state
+import reporter
+from bankroll import get_state, update_balance_from_raw
 
 logger = logging.getLogger(__name__)
 
 
 def make_health_handler(get_daily_stats: Callable[[], dict]):
     async def health(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if os.getenv("HEALTH_REFRESH_BALANCE", "1") == "1":
+            async def _refresh_balance():
+                try:
+                    account = await asyncio.to_thread(reporter.fetch_account_summary)
+                    update_balance_from_raw(account.get("balance"))
+                except Exception:
+                    logger.exception("Balance refresh failed during /health")
+
+            context.application.create_task(_refresh_balance())
+
         stats = get_daily_stats()
         bankroll_state = get_state()
         text = (
@@ -33,7 +45,7 @@ def make_health_handler(get_daily_stats: Callable[[], dict]):
     return health
 
 
-async def _reply_with_retry(update: Update, text: str, attempts: int = 2, delay_seconds: float = 1.0) -> None:
+async def _reply_with_retry(update: Update, text: str, attempts: int = 3, delay_seconds: float = 1.0) -> None:
     last_error = None
     for attempt in range(1, attempts + 1):
         try:
@@ -42,6 +54,6 @@ async def _reply_with_retry(update: Update, text: str, attempts: int = 2, delay_
         except TimedOut as exc:
             last_error = exc
             if attempt < attempts:
-                await asyncio.sleep(delay_seconds)
+                await asyncio.sleep(delay_seconds * attempt)
             else:
                 raise
