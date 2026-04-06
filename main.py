@@ -22,6 +22,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+logger.info(
+    "Env loaded: BOT_TOKEN=%s SPORTYBET_PHONE=%s SPORTYBET_PASSWORD=%s",
+    "yes" if BOT_TOKEN else "no",
+    "yes" if os.getenv("SPORTYBET_PHONE") else "no",
+    "yes" if os.getenv("SPORTYBET_PASSWORD") else "no",
+)
+
 # In-memory daily stats — resets on each deploy/restart
 daily_stats = {
     "placed": 0,
