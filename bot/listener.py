@@ -1,9 +1,11 @@
+import asyncio
 import logging
 import os
 from dotenv import load_dotenv
 
 try:
     from telegram import Update
+    from telegram.error import TimedOut
     from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 except ModuleNotFoundError:  # pragma: no cover - fallback for lightweight environments
     class Update:  # type: ignore[misc]
@@ -19,6 +21,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for lightweight envir
     filters = _DummyFilters()
     ApplicationBuilder = None  # type: ignore[misc]
     MessageHandler = lambda *args, **kwargs: None  # type: ignore[misc]
+    TimedOut = Exception  # type: ignore[misc]
 
 from .parser import extract_bet_code
 from sportybet.client import place_bet_with_code
@@ -73,13 +76,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not has_available_allocation():
         logger.info("Daily allocation exhausted.")
-        await message.reply_text("Daily allocation depleted. Use /health to confirm and try again after the daily reset.")
+        await _reply_with_retry(message, "Daily allocation depleted. Use /health to confirm and try again after the daily reset.")
         return
 
     stake_amount = reserve_stake()
     if stake_amount is None:
         logger.info("Bankroll not initialized yet.")
-        await message.reply_text("Allocation is being refreshed—please wait a moment before placing a bet.")
+        await _reply_with_retry(message, "Allocation is being refreshed—please wait a moment before placing a bet.")
         return
 
     logger.info(f"Bet code detected: {code} — placing bet...")
@@ -89,7 +92,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if success:
         logger.info(f"Bet placed successfully: {result_message}")
         state = get_state()
-        await message.reply_text(
+        await _reply_with_retry(
+            message,
             f"✅ Bet placed! Code: {code}\n{result_message}\n"
             f"Allocation remaining: ₦{state['allocation_remaining']:,.2f} "
             f"({state['bets_remaining']}/{state['max_bets_per_day']} bets left)"
@@ -97,7 +101,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         logger.error(f"Failed to place bet: {result_message}")
         release_stake(stake_amount)
-        await message.reply_text(f"❌ Failed to place bet for code: {code}\nReason: {result_message}")
+        await _reply_with_retry(message, f"❌ Failed to place bet for code: {code}\nReason: {result_message}")
 
 
 def start_listener():
@@ -109,6 +113,20 @@ def start_listener():
 
     logger.info("Listener is running...")
     app.run_polling()
+
+
+async def _reply_with_retry(message, text: str, attempts: int = 2, delay_seconds: float = 1.0) -> None:
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            await message.reply_text(text)
+            return
+        except TimedOut as exc:
+            last_error = exc
+            if attempt < attempts:
+                await asyncio.sleep(delay_seconds)
+            else:
+                raise
 
 
 if __name__ == "__main__":
