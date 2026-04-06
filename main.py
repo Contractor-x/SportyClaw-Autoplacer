@@ -13,6 +13,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 REPORT_TIME = os.getenv("REPORT_TIME", "23:00")  # 24hr format, WAT (UTC+1)
+MAX_BETS_PER_DAY = int(os.getenv("MAX_BETS_PER_DAY", "30"))
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -47,7 +48,7 @@ def sync_refresh_bankroll():
     try:
         account = reporter.fetch_account_summary()
         balance = parse_balance(account.get("balance"))
-        initialize_from_amount(balance)
+        initialize_from_amount(balance, max_bets_per_day=MAX_BETS_PER_DAY)
     except Exception as exc:
         logger.exception("Failed to refresh bankroll: %s", exc)
 
