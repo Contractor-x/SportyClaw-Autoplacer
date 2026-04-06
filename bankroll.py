@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 class _BankrollState:
     starting_balance: float = 0.0
     current_balance: float = 0.0
+    last_balance_raw: str | None = None
     allocation_total: float = 0.0
     allocation_remaining: float = 0.0
     max_bets_per_day: int = MAX_BETS_PER_DAY
@@ -40,6 +41,7 @@ def parse_balance(raw: str | None) -> float:
 def reset() -> None:
     _state.starting_balance = 0.0
     _state.current_balance = 0.0
+    _state.last_balance_raw = None
     _state.allocation_total = 0.0
     _state.allocation_remaining = 0.0
     _state.max_bets_per_day = MAX_BETS_PER_DAY
@@ -62,6 +64,17 @@ def initialize_from_amount(amount: float, max_bets_per_day: int = MAX_BETS_PER_D
         allocation,
         _state.max_bets_per_day,
     )
+
+
+def update_current_balance(amount: float) -> None:
+    _state.current_balance = _normalize_amount(max(0.0, float(amount)))
+
+
+def update_balance_from_raw(raw: str | None) -> float:
+    _state.last_balance_raw = raw
+    parsed = parse_balance(raw)
+    update_current_balance(parsed)
+    return parsed
 
 def _to_kobo(amount: float) -> int:
     return max(0, int(round(amount * 100)))
@@ -121,6 +134,7 @@ def get_state() -> dict:
     return {
         "starting_balance": _state.starting_balance,
         "current_balance": _state.current_balance,
+        "last_balance_raw": _state.last_balance_raw,
         "allocation_total": _state.allocation_total,
         "allocation_remaining": _state.allocation_remaining,
         "bets_remaining": _state.bets_remaining,
