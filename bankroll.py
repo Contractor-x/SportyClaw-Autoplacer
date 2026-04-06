@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _BankrollState:
     starting_balance: float = 0.0
+    current_balance: float = 0.0
     allocation_total: float = 0.0
     allocation_remaining: float = 0.0
     max_bets_per_day: int = MAX_BETS_PER_DAY
@@ -38,6 +39,7 @@ def parse_balance(raw: str | None) -> float:
 
 def reset() -> None:
     _state.starting_balance = 0.0
+    _state.current_balance = 0.0
     _state.allocation_total = 0.0
     _state.allocation_remaining = 0.0
     _state.max_bets_per_day = MAX_BETS_PER_DAY
@@ -49,6 +51,7 @@ def initialize_from_amount(amount: float, max_bets_per_day: int = MAX_BETS_PER_D
     amount = max(0.0, float(amount))
     allocation = compute_daily_allocation(amount).allocation
     _state.starting_balance = _normalize_amount(amount)
+    _state.current_balance = _normalize_amount(amount)
     _state.allocation_total = _normalize_amount(allocation)
     _state.allocation_remaining = _normalize_amount(allocation)
     _state.max_bets_per_day = max(0, int(max_bets_per_day))
@@ -117,6 +120,7 @@ def has_available_allocation() -> bool:
 def get_state() -> dict:
     return {
         "starting_balance": _state.starting_balance,
+        "current_balance": _state.current_balance,
         "allocation_total": _state.allocation_total,
         "allocation_remaining": _state.allocation_remaining,
         "bets_remaining": _state.bets_remaining,
