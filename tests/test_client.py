@@ -4,8 +4,8 @@ import sportybet.client as client
 
 
 def test_place_bet_with_code_requires_credentials(monkeypatch):
-    monkeypatch.setattr(client, "SPORTYBET_PHONE", None)
-    monkeypatch.setattr(client, "SPORTYBET_PASSWORD", None)
+    monkeypatch.delenv("SPORTYBET_PHONE", raising=False)
+    monkeypatch.delenv("SPORTYBET_PASSWORD", raising=False)
 
     success, message = client.place_bet_with_code("ABC123", 100)
 
