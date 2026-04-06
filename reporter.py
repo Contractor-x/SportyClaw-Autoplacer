@@ -14,6 +14,9 @@ def fetch_account_summary() -> dict:
     """Logs into SportyBet and scrapes account info."""
     driver = None
     try:
+        if not os.getenv("SPORTYBET_PHONE") or not os.getenv("SPORTYBET_PASSWORD"):
+            raise Exception("Missing SPORTYBET_PHONE or SPORTYBET_PASSWORD in environment.")
+
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
