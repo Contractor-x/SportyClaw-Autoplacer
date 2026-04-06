@@ -1,5 +1,7 @@
+import asyncio
 import logging
 from typing import Callable
+from telegram.error import TimedOut
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -25,6 +27,20 @@ def make_health_handler(get_daily_stats: Callable[[], dict]):
             f"Reserve balance: ₦{bankroll_state['reserve']:,.2f}"
         )
         logger.info("Health command replied with current stats.")
-        await update.message.reply_text(text)
+        await _reply_with_retry(update, text)
 
     return health
+
+
+async def _reply_with_retry(update: Update, text: str, attempts: int = 2, delay_seconds: float = 1.0) -> None:
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            await update.message.reply_text(text)
+            return
+        except TimedOut as exc:
+            last_error = exc
+            if attempt < attempts:
+                await asyncio.sleep(delay_seconds)
+            else:
+                raise
