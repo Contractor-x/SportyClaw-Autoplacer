@@ -2,15 +2,18 @@ import logging
 import re
 from dataclasses import dataclass
 
+from engine import compute_daily_allocation, MAX_BETS_PER_DAY
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class _BankrollState:
     starting_balance: float = 0.0
-    chunk_value: float = 0.0
-    chunks_available: int = 0
-    total_chunks: int = 0
+    allocation_total: float = 0.0
+    allocation_remaining: float = 0.0
+    max_bets_per_day: int = MAX_BETS_PER_DAY
+    bets_remaining: int = 0
 
 
 _state = _BankrollState()
@@ -35,47 +38,88 @@ def parse_balance(raw: str | None) -> float:
 
 def reset() -> None:
     _state.starting_balance = 0.0
-    _state.chunk_value = 0.0
-    _state.chunks_available = 0
-    _state.total_chunks = 0
+    _state.allocation_total = 0.0
+    _state.allocation_remaining = 0.0
+    _state.max_bets_per_day = MAX_BETS_PER_DAY
+    _state.bets_remaining = 0
 
-## Splits my money into 4 equal parts (quarters) and tracks how many are currently reserved for bets. When a bet is placed, it reserves one quarter. If the bet wins, that quarter is considered profit and not released back. If the bet loses, that quarter is considered lost and also not released back. This way I can manage risk by only allowing a certain portion of my bankroll to be used at any time.
-def initialize_from_amount(amount: float) -> None:
+## Computes a daily allocation cap from the account balance and tracks how much can be used today.
+## Each bet reserves a stake from the remaining allocation, with a max number of bets per day.
+def initialize_from_amount(amount: float, max_bets_per_day: int = MAX_BETS_PER_DAY) -> None:
     amount = max(0.0, float(amount))
+    allocation = compute_daily_allocation(amount).allocation
     _state.starting_balance = _normalize_amount(amount)
-    if amount > 0:
-        _state.total_chunks = 4
-        _state.chunk_value = _normalize_amount(amount / _state.total_chunks)
-        _state.chunks_available = _state.total_chunks
-    else:
-        _state.total_chunks = 0
-        _state.chunk_value = 0.0
-        _state.chunks_available = 0
-    logger.info("Bankroll initialized with ₦%0.2f split across %s quarters", amount, _state.total_chunks)
+    _state.allocation_total = _normalize_amount(allocation)
+    _state.allocation_remaining = _normalize_amount(allocation)
+    _state.max_bets_per_day = max(0, int(max_bets_per_day))
+    _state.bets_remaining = _state.max_bets_per_day if allocation > 0 else 0
+    logger.info(
+        "Bankroll initialized with ₦%0.2f; allocation ₦%0.2f across %s max bets",
+        amount,
+        allocation,
+        _state.max_bets_per_day,
+    )
+
+def _to_kobo(amount: float) -> int:
+    return max(0, int(round(amount * 100)))
 
 
-def reserve_chunk() -> float | None:
-    if _state.chunk_value <= 0 or _state.chunks_available <= 0:
+def _from_kobo(kobo: int) -> float:
+    return round(kobo / 100, 2)
+
+
+def reserve_stake() -> float | None:
+    if _state.allocation_remaining <= 0 or _state.bets_remaining <= 0:
         return None
-    _state.chunks_available -= 1
-    logger.info("Reserved one quarter (₦%0.2f), %s remaining", _state.chunk_value, _state.chunks_available)
-    return _state.chunk_value
+
+    remaining_kobo = _to_kobo(_state.allocation_remaining)
+    if remaining_kobo <= 0:
+        return None
+
+    if _state.bets_remaining == 1:
+        stake_kobo = remaining_kobo
+    else:
+        stake_kobo = remaining_kobo // _state.bets_remaining
+        if stake_kobo <= 0:
+            return None
+
+    stake = _from_kobo(stake_kobo)
+    _state.allocation_remaining = _normalize_amount(_state.allocation_remaining - stake)
+    _state.bets_remaining = max(0, _state.bets_remaining - 1)
+    logger.info(
+        "Reserved ₦%0.2f stake, ₦%0.2f remaining (%s bets left)",
+        stake,
+        _state.allocation_remaining,
+        _state.bets_remaining,
+    )
+    return stake
 
 
-def release_chunk() -> None:
-    if _state.total_chunks > 0 and _state.chunks_available < _state.total_chunks:
-        _state.chunks_available += 1
-        logger.info("Released one reserved quarter, %s remaining", _state.chunks_available)
+def release_stake(amount: float) -> None:
+    amount = max(0.0, float(amount))
+    if amount <= 0:
+        return
+    _state.allocation_remaining = _normalize_amount(_state.allocation_remaining + amount)
+    _state.bets_remaining = min(_state.max_bets_per_day, _state.bets_remaining + 1)
+    _state.allocation_remaining = min(_state.allocation_remaining, _state.allocation_total)
+    logger.info(
+        "Released ₦%0.2f stake, ₦%0.2f remaining (%s bets left)",
+        amount,
+        _state.allocation_remaining,
+        _state.bets_remaining,
+    )
 
 
-def has_available_chunks() -> bool:
-    return _state.chunk_value > 0 and _state.chunks_available > 0
+def has_available_allocation() -> bool:
+    return _state.allocation_remaining > 0 and _state.bets_remaining > 0
 
-## gets the starting balance, chunk value, how many chunks are currently available, and the total number of chunks for the day. This is useful for monitoring the bankroll status and making informed decisions about placing bets.
+## gets the starting balance, daily allocation, remaining allocation, and remaining bets for the day.
 def get_state() -> dict:
     return {
         "starting_balance": _state.starting_balance,
-        "chunk_value": _state.chunk_value,
-        "chunks_available": _state.chunks_available,
-        "total_chunks": _state.total_chunks,
+        "allocation_total": _state.allocation_total,
+        "allocation_remaining": _state.allocation_remaining,
+        "bets_remaining": _state.bets_remaining,
+        "max_bets_per_day": _state.max_bets_per_day,
+        "reserve": _normalize_amount(_state.starting_balance - _state.allocation_total),
     }
