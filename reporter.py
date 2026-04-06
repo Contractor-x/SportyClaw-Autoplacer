@@ -52,6 +52,9 @@ def fetch_account_summary() -> dict:
             "//div[contains(@class,'balance')]",
             "//span[contains(@class,'amount')]",
             "//div[contains(@class,'wallet')]",
+            "//*[@data-testid='balance' or contains(@data-testid,'balance')]",
+            "//*[@aria-label='Balance' or contains(@aria-label,'Balance')]",
+            "//*[contains(@class,'user-balance') or contains(@class,'wallet-balance')]",
         ]
         for sel in balance_selectors:
             try:
