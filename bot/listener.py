@@ -115,7 +115,7 @@ def start_listener():
     app.run_polling()
 
 
-async def _reply_with_retry(message, text: str, attempts: int = 2, delay_seconds: float = 1.0) -> None:
+async def _reply_with_retry(message, text: str, attempts: int = 3, delay_seconds: float = 1.0) -> None:
     last_error = None
     for attempt in range(1, attempts + 1):
         try:
@@ -124,7 +124,7 @@ async def _reply_with_retry(message, text: str, attempts: int = 2, delay_seconds
         except TimedOut as exc:
             last_error = exc
             if attempt < attempts:
-                await asyncio.sleep(delay_seconds)
+                await asyncio.sleep(delay_seconds * attempt)
             else:
                 raise
 
