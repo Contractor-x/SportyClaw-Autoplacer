@@ -3,8 +3,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# SportyBet booking codes are typically 7 uppercase alphanumeric characters
-# but can vary. Adjust patterns below if your friend formats them differently.
+# SportyBet booking codes are typically 7 uppercase alphanumeric characters but it can adjust
+# Adjust patterns below if your friend formats them differently.
 
 PATTERNS = [
     # Plain code alone on a line or in message e.g. "ABC1234"
