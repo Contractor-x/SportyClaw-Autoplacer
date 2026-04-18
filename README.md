@@ -7,16 +7,18 @@ SportyClaw Autoplacer is a Telegram-driven SportyBet automation suite that pulls
 ## Core features
 
 - **Telegram listener** (`main.py`, `bot/listener.py`): polls Telegram for text updates, ignores unauthorized senders, extracts SportyBet booking codes via `bot/parser.py`, and invokes `sportybet.client.place_bet_with_code` while checking the daily allocation. The Selenium client logs into SportyBet, enables the SportyInsure “One Cut” option, and stakes the computed amount before confirming the ticket. Successful bets include a quick allocation countdown in the reply; if the day’s allocation is gone, it replies with an exhaustion warning.
+- **Telethon listener (optional)** (`bot/telethon_listener.py`): uses your personal Telegram account to watch configured groups/chats and pushes incoming text through the same authorization/parsing/placement pipeline used by the bot listener.
 - **Bankroll engine** (`engine.py`, `bankroll.py`): every morning the bot scrapes the current SportyBet balance, computes a daily allocation cap from dynamic tier anchors, and spreads stakes across up to 30 bets. Unused allocation remains in the account and is included the next day when the balance is refreshed.
-- **Health + reporting** (`health.py`, `bot/commands.py`, `reporter.py`): a HTTP `/health` endpoint plus a `/health` Telegram command that both output the latest stats, including remaining quarters and profit/loss. Daily reports scrape SportyBet, marry the scraped ledger with the in-memory stats, and DM the owner chat as Markdown.
+- **Health + reporting** (`health.py`, `bot/commands.py`, `reporter.py`): a HTTP `/health` endpoint plus a `/health` Telegram command that both output the latest stats, including allocation status and profit/loss. Daily reports scrape SportyBet, marry the scraped ledger with the in-memory stats, and DM the owner chat as Markdown.
 - **Mocking & pytest coverage** (`bot/mock_handler.py`, `tests/*`): the parser, listener, bankroll, and health handlers are all exercised via pytest, and the mock update/message helpers let you run listener tests without Telegram or Selenium.
 
 ## Running the bot
 
 1. Populate `.env` with at least `BOT_TOKEN`, `OWNER_CHAT_ID`, `ALLOWED_USER_ID`, and the SportyBet credentials (`SPORTYBET_PHONE`, `SPORTYBET_PASSWORD`). If you want to authorize additional Telegram users (e.g., people in other groups), set `ALLOWED_USER_IDS` to a comma-separated list of their numeric IDs; the listener accepts messages from anyone named in `ALLOWED_USER_ID` or `ALLOWED_USER_IDS`. To change the daily cap on how many bets can be placed, set `MAX_BETS_PER_DAY` (defaults to 30). To force `/health` to refresh the live SportyBet balance, set `HEALTH_REFRESH_BALANCE=1` (default).
-2. Install dependencies (ideally inside a virtualenv) with `python -m pip install -r requirements.txt`.
-3. Run `python main.py`; the health server and Telegram polling start automatically.
-4. Send booking codes through Telegram (or via the Telegram Bot API/ Postman) and keep an eye on `/health` to monitor the bankroll/quota breakdown.
+2. (Optional) Enable Telethon user-account monitoring by setting `TELETHON_ENABLED=1` plus `TELETHON_API_ID`, `TELETHON_API_HASH`, and `TELETHON_CHATS` in `.env`. You can also set `TELETHON_PHONE` for first-time login and `TELETHON_REPLY_IN_CHAT=1` if you want placement replies inside the monitored group.
+3. Install dependencies (ideally inside a virtualenv) with `python -m pip install -r requirements.txt`.
+4. Run `python main.py`; the health server and Telegram polling start automatically. If Telethon is enabled, the Telethon listener also starts in the background.
+5. Send booking codes through Telegram (or via the Telegram Bot API/ Postman) and keep an eye on `/health` to monitor the bankroll/quota breakdown.
 
 ## Bankroll mechanics recap
 
