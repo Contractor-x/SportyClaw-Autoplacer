@@ -62,6 +62,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_name = message.from_user.full_name
     text = message.text.strip()
 
+    await process_incoming_text(sender_id, sender_name, text, message.reply_text)
+
+
+async def process_incoming_text(
+    sender_id: str,
+    sender_name: str,
+    text: str,
+    reply_func=None,
+):
     logger.info(f"Message from {sender_name} ({sender_id}): {text}")
 
     allowed_ids = _build_allowed_user_ids()
@@ -76,13 +85,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not has_available_allocation():
         logger.info("Daily allocation exhausted.")
-        await _reply_with_retry(message, "Daily allocation depleted. Use /health to confirm and try again after the daily reset.")
+        await _reply_with_retry(
+            reply_func,
+            "Daily allocation depleted. Use /health to confirm and try again after the daily reset.",
+        )
         return
 
     stake_amount = reserve_stake()
     if stake_amount is None:
         logger.info("Bankroll not initialized yet.")
-        await _reply_with_retry(message, "Allocation is being refreshed—please wait a moment before placing a bet.")
+        await _reply_with_retry(
+            reply_func,
+            "Allocation is being refreshed—please wait a moment before placing a bet.",
+        )
         return
 
     logger.info(f"Bet code detected: {code} — placing bet...")
@@ -93,7 +108,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Bet placed successfully: {result_message}")
         state = get_state()
         await _reply_with_retry(
-            message,
+            reply_func,
             f"✅ Bet placed! Code: {code}\n{result_message}\n"
             f"Allocation remaining: ₦{state['allocation_remaining']:,.2f} "
             f"({state['bets_remaining']}/{state['max_bets_per_day']} bets left)"
@@ -101,7 +116,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         logger.error(f"Failed to place bet: {result_message}")
         release_stake(stake_amount)
-        await _reply_with_retry(message, f"❌ Failed to place bet for code: {code}\nReason: {result_message}")
+        await _reply_with_retry(reply_func, f"❌ Failed to place bet for code: {code}\nReason: {result_message}")
 
 
 def start_listener():
@@ -115,14 +130,15 @@ def start_listener():
     app.run_polling()
 
 
-async def _reply_with_retry(message, text: str, attempts: int = 3, delay_seconds: float = 1.0) -> None:
-    last_error = None
+async def _reply_with_retry(reply_func, text: str, attempts: int = 3, delay_seconds: float = 1.0) -> None:
+    if reply_func is None:
+        return
+
     for attempt in range(1, attempts + 1):
         try:
-            await message.reply_text(text)
+            await reply_func(text)
             return
         except TimedOut as exc:
-            last_error = exc
             if attempt < attempts:
                 await asyncio.sleep(delay_seconds * attempt)
             else:
