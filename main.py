@@ -15,6 +15,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 REPORT_TIME = os.getenv("REPORT_TIME", "23:00")  # 24hr format, WAT (UTC+1)
 MAX_BETS_PER_DAY = int(os.getenv("MAX_BETS_PER_DAY", "30"))
+TELETHON_ENABLED = str(os.getenv("TELETHON_ENABLED", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -81,15 +82,29 @@ async def run_daily_reset(_: object):
 
 
 def main():
-    if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN is not set.")
-
     start_health_server()
 
     sync_refresh_bankroll()
 
     report_time = parse_report_time()
     logger.info(f"Daily report scheduled at {REPORT_TIME} WAT")
+
+    if TELETHON_ENABLED:
+        try:
+            from bot.telethon_listener import run_telethon_listener_in_thread, start_telethon_listener
+
+            if not BOT_TOKEN:
+                logger.info("Running in Telethon-only mode (BOT_TOKEN not set).")
+                asyncio.run(start_telethon_listener())
+                return
+
+            run_telethon_listener_in_thread()
+            logger.info("Telethon listener enabled.")
+        except Exception as exc:
+            logger.exception("Failed to start Telethon listener: %s", exc)
+
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN is not set. Set BOT_TOKEN or enable Telethon-only mode with TELETHON_ENABLED=1.")
 
     request = HTTPXRequest(
         connect_timeout=20,
