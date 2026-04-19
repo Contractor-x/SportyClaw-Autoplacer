@@ -1,149 +1,125 @@
-import asyncio
 import logging
 import os
+from typing import Awaitable, Callable
+
 from dotenv import load_dotenv
+from telethon import TelegramClient, events
+from telethon.tl.custom.message import Message
 
-try:
-    from telegram import Update
-    from telegram.error import TimedOut
-    from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
-except ModuleNotFoundError:  # pragma: no cover - fallback for lightweight environments
-    class Update:  # type: ignore[misc]
-        pass
-
-    class ContextTypes:  # type: ignore[misc]
-        DEFAULT_TYPE = object
-
-    class _DummyFilters:
-        TEXT = None
-        COMMAND = None
-
-    filters = _DummyFilters()
-    ApplicationBuilder = None  # type: ignore[misc]
-    MessageHandler = lambda *args, **kwargs: None  # type: ignore[misc]
-    TimedOut = Exception  # type: ignore[misc]
-
-from .parser import extract_bet_code
-from sportybet.client import place_bet_with_code
-from bankroll import has_available_allocation, reserve_stake, release_stake, get_state
+from bot.parser import extract_bet_code
+from bot.sportybet import place_bet_with_code
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ALLOWED_USER_ID = os.getenv("ALLOWED_USER_ID")
-ALLOWED_USER_IDS = os.getenv("ALLOWED_USER_IDS", "")
-
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
 logger = logging.getLogger(__name__)
 
+API_ID = int(os.getenv("API_ID", "0"))
+API_HASH = os.getenv("API_HASH", "")
+PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")
+SESSION_NAME = os.getenv("TELETHON_SESSION", "session")
 
-def _build_allowed_user_ids() -> set[str]:
-    allowed = set()
-    if ALLOWED_USER_ID:
-        allowed.add(ALLOWED_USER_ID.strip())
+GROUP_USERNAME = os.getenv("GROUP_USERNAME", "").strip()
+FRIEND_USERNAME = os.getenv("FRIEND_USERNAME", "").strip().lstrip("@").lower()
+FRIEND_ID = os.getenv("FRIEND_ID", "").strip()
 
-    for raw in ALLOWED_USER_IDS.split(","):
-        trimmed = raw.strip()
-        if trimmed:
-            allowed.add(trimmed)
+BETTING_BOT_USERNAME = os.getenv("BETTING_BOT_USERNAME", "").strip().lstrip("@")
+BOT_MESSAGE = os.getenv("BOT_MESSAGE", "give me 5 matches today all high stakes").strip()
 
-    return allowed
+_client: TelegramClient | None = None
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    if not message or not message.text:
+def get_client() -> TelegramClient:
+    global _client
+    if _client is None:
+        if not API_ID or not API_HASH:
+            raise RuntimeError("Missing API_ID or API_HASH.")
+        _client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
+    return _client
+
+
+def _is_allowed_sender(sender_username: str | None, sender_id: int | None) -> bool:
+    if FRIEND_ID and sender_id is not None and str(sender_id) == FRIEND_ID:
+        return True
+    if FRIEND_USERNAME and sender_username and sender_username.lower().lstrip("@") == FRIEND_USERNAME:
+        return True
+    return not FRIEND_ID and not FRIEND_USERNAME
+
+
+def _run_placement(code: str) -> None:
+    try:
+        success, details = place_bet_with_code(code)
+        if success:
+            logger.info("Bet placed from Telethon flow: %s", details)
+        else:
+            logger.warning("Bet placement failed from Telethon flow: %s", details)
+    except Exception:
+        logger.exception("Unexpected error while placing bet from Telethon flow.")
+
+
+async def _handle_group_message(event: events.NewMessage.Event) -> None:
+    message: Message = event.message
+    text = (message.raw_text or "").strip()
+    if not text:
         return
 
-    sender_id = str(message.from_user.id)
-    sender_name = message.from_user.full_name
-    text = message.text.strip()
+    sender = await event.get_sender()
+    sender_username = getattr(sender, "username", None)
+    sender_id = getattr(sender, "id", None)
 
-    await process_incoming_text(sender_id, sender_name, text, message.reply_text)
-
-
-async def process_incoming_text(
-    sender_id: str,
-    sender_name: str,
-    text: str,
-    reply_func=None,
-):
-    logger.info(f"Message from {sender_name} ({sender_id}): {text}")
-
-    allowed_ids = _build_allowed_user_ids()
-    if allowed_ids and sender_id not in allowed_ids:
-        logger.info(f"Ignoring message from unauthorized user {sender_id}")
+    if not _is_allowed_sender(sender_username, sender_id):
         return
 
     code = extract_bet_code(text)
     if not code:
-        logger.info("No bet code found in message.")
         return
 
-    if not has_available_allocation():
-        logger.info("Daily allocation exhausted.")
-        await _reply_with_retry(
-            reply_func,
-            "Daily allocation depleted. Use /health to confirm and try again after the daily reset.",
-        )
+    logger.info("Group listener extracted code: %s", code)
+    _run_placement(code)
+
+
+async def _handle_betting_bot_reply(event: events.NewMessage.Event) -> None:
+    message: Message = event.message
+    text = (message.raw_text or "").strip()
+    if not text:
         return
 
-    stake_amount = reserve_stake()
-    if stake_amount is None:
-        logger.info("Bankroll not initialized yet.")
-        await _reply_with_retry(
-            reply_func,
-            "Allocation is being refreshed—please wait a moment before placing a bet.",
-        )
+    code = extract_bet_code(text)
+    if not code:
+        logger.info("No booking code found in betting bot reply.")
         return
 
-    logger.info(f"Bet code detected: {code} — placing bet...")
+    logger.info("Betting bot reply extracted code: %s", code)
+    _run_placement(code)
 
-    success, result_message = place_bet_with_code(code, stake_amount)
 
-    if success:
-        logger.info(f"Bet placed successfully: {result_message}")
-        state = get_state()
-        await _reply_with_retry(
-            reply_func,
-            f"✅ Bet placed! Code: {code}\n{result_message}\n"
-            f"Allocation remaining: ₦{state['allocation_remaining']:,.2f} "
-            f"({state['bets_remaining']}/{state['max_bets_per_day']} bets left)"
-        )
+def register_handlers(client: TelegramClient) -> None:
+    if GROUP_USERNAME:
+        client.add_event_handler(_handle_group_message, events.NewMessage(chats=GROUP_USERNAME))
+        logger.info("Registered group handler for %s", GROUP_USERNAME)
     else:
-        logger.error(f"Failed to place bet: {result_message}")
-        release_stake(stake_amount)
-        await _reply_with_retry(reply_func, f"❌ Failed to place bet for code: {code}\nReason: {result_message}")
+        logger.warning("GROUP_USERNAME is not set. Group monitoring is disabled.")
+
+    if BETTING_BOT_USERNAME:
+        client.add_event_handler(
+            _handle_betting_bot_reply,
+            events.NewMessage(from_users=BETTING_BOT_USERNAME),
+        )
+        logger.info("Registered betting bot reply handler for @%s", BETTING_BOT_USERNAME)
+    else:
+        logger.warning("BETTING_BOT_USERNAME is not set. Betting bot reply monitoring is disabled.")
 
 
-def start_listener():
-    if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN is not set in environment variables.")
-
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    logger.info("Listener is running...")
-    app.run_polling()
-
-
-async def _reply_with_retry(reply_func, text: str, attempts: int = 3, delay_seconds: float = 1.0) -> None:
-    if reply_func is None:
+async def message_betting_bot() -> None:
+    if not BETTING_BOT_USERNAME:
+        logger.warning("Skipping scheduled message: BETTING_BOT_USERNAME is not configured.")
+        return
+    if not BOT_MESSAGE:
+        logger.warning("Skipping scheduled message: BOT_MESSAGE is empty.")
         return
 
-    for attempt in range(1, attempts + 1):
-        try:
-            await reply_func(text)
-            return
-        except TimedOut as exc:
-            if attempt < attempts:
-                await asyncio.sleep(delay_seconds * attempt)
-            else:
-                raise
-
-
-if __name__ == "__main__":
-    start_listener()
+    client = get_client()
+    try:
+        await client.send_message(BETTING_BOT_USERNAME, BOT_MESSAGE)
+        logger.info("Scheduled message sent to @%s", BETTING_BOT_USERNAME)
+    except Exception:
+        logger.exception("Failed to send scheduled message to @%s", BETTING_BOT_USERNAME)
