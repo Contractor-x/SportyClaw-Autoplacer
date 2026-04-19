@@ -23,7 +23,7 @@ FRIEND_USERNAME = os.getenv("FRIEND_USERNAME", "").strip().lstrip("@").lower()
 FRIEND_ID = os.getenv("FRIEND_ID", "").strip()
 
 BETTING_BOT_USERNAME = os.getenv("BETTING_BOT_USERNAME", "").strip().lstrip("@")
-BOT_MESSAGE = os.getenv("BOT_MESSAGE", "give me 5 matches today all high stakes").strip()
+BOT_MESSAGE = os.getenv("BOT_MESSAGE", "Analyze football/Basketball matches using team form, head-to-head history, injuries and standings. Pick the 5 highest confidence matches and return them as 5 separate SportyBet booking codes, one per match, labelled Slip 1 through Slip 5.").strip()
 
 _client: TelegramClient | None = None
 
