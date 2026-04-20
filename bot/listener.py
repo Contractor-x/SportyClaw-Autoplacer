@@ -19,8 +19,6 @@ PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")
 SESSION_NAME = os.getenv("TELETHON_SESSION", "session")
 
 GROUP_USERNAME = os.getenv("GROUP_USERNAME", "").strip()
-FRIEND_USERNAME = os.getenv("FRIEND_USERNAME", "").strip().lstrip("@").lower()
-FRIEND_ID = os.getenv("FRIEND_ID", "").strip()
 
 BETTING_BOT_USERNAME = os.getenv("BETTING_BOT_USERNAME", "").strip().lstrip("@")
 BOT_MESSAGE = os.getenv("BOT_MESSAGE", "Analyze football/Basketball matches using team form, head-to-head history, injuries and standings. Pick the 5 highest confidence matches and return them as 5 separate SportyBet booking codes, one per match, labelled Slip 1 through Slip 5.").strip()
@@ -37,12 +35,6 @@ def get_client() -> TelegramClient:
     return _client
 
 
-def _is_allowed_sender(sender_username: str | None, sender_id: int | None) -> bool:
-    if FRIEND_ID and sender_id is not None and str(sender_id) == FRIEND_ID:
-        return True
-    if FRIEND_USERNAME and sender_username and sender_username.lower().lstrip("@") == FRIEND_USERNAME:
-        return True
-    return not FRIEND_ID and not FRIEND_USERNAME
 
 
 def _run_placement(code: str) -> None:
@@ -60,13 +52,6 @@ async def _handle_group_message(event: events.NewMessage.Event) -> None:
     message: Message = event.message
     text = (message.raw_text or "").strip()
     if not text:
-        return
-
-    sender = await event.get_sender()
-    sender_username = getattr(sender, "username", None)
-    sender_id = getattr(sender, "id", None)
-
-    if not _is_allowed_sender(sender_username, sender_id):
         return
 
     code = extract_bet_code(text)
