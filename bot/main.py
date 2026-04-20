@@ -4,11 +4,15 @@ import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
+from telegram.ext import Application, CommandHandler
 
+from bot.commands import make_health_handler
 from bot.listener import PHONE_NUMBER, get_client, message_betting_bot, register_handlers
 from bot.reporter import fetch_account_summary, send_daily_report
 
 load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -78,23 +82,51 @@ async def _warmup_account_fetch() -> None:
         logger.exception("Warmup account summary fetch failed.")
 
 
+def get_daily_stats() -> dict:
+    return daily_stats
+
+
 async def run() -> None:
+    # Start Telethon client
     client = get_client()
     register_handlers(client)
     scheduler: AsyncIOScheduler | None = None
+    bot_app: Application | None = None
 
     try:
+        # Start Telethon
         if PHONE_NUMBER:
             await client.start(phone=PHONE_NUMBER)
         else:
             await client.start()
         logger.info("Telethon client started.")
+        
+        # Start Telegram Bot if BOT_TOKEN is configured
+        if BOT_TOKEN:
+            bot_app = Application.builder().token(BOT_TOKEN).build()
+            bot_app.add_handler(CommandHandler("health", make_health_handler(get_daily_stats)))
+            await bot_app.initialize()
+            await bot_app.start()
+            logger.info("Telegram bot started and /health command registered.")
+            
+            # Start polling in background
+            asyncio.create_task(bot_app.updater.start_polling())
+        else:
+            logger.warning("BOT_TOKEN not set. Telegram bot /health command will not be available.")
+        
+        # Start scheduler
         scheduler = _start_scheduler()
         await _warmup_account_fetch()
+        
+        # Keep running
         await client.run_until_disconnected()
     finally:
         if scheduler:
             scheduler.shutdown(wait=False)
+        if bot_app:
+            await bot_app.updater.stop()
+            await bot_app.stop()
+            await bot_app.shutdown()
 
 
 def main() -> None:
