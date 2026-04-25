@@ -1,6 +1,9 @@
 import asyncio
+import json
 import logging
 import os
+import urllib.parse
+import urllib.request
 from typing import Awaitable, Callable
 
 from dotenv import load_dotenv
@@ -18,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")
 SESSION_NAME = os.getenv("TELETHON_SESSION", "session")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 TELETHON_CHATS_RAW = os.getenv("TELETHON_CHATS", "").strip()
 ALLOWED_USER_ID = os.getenv("ALLOWED_USER_ID", "").strip()
@@ -83,6 +87,20 @@ def get_client() -> TelegramClient:
             raise RuntimeError("Missing Telegram API credentials.")
         _client = TelegramClient(SESSION_NAME, api_id, api_hash)
     return _client
+
+
+def _bot_api_send_message(chat_id: int | str, text: str) -> None:
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN is not configured.")
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = urllib.parse.urlencode({"chat_id": str(chat_id), "text": text}).encode("utf-8")
+    request = urllib.request.Request(url, data=payload, method="POST")
+    with urllib.request.urlopen(request, timeout=20) as response:
+        data = json.loads(response.read().decode("utf-8"))
+
+    if not data.get("ok"):
+        raise RuntimeError(f"Telegram Bot API error: {data}")
 
 
 def _is_allowed_sender(sender_id: int | None) -> bool:
@@ -173,7 +191,16 @@ async def _handle_health_command(event: events.NewMessage.Event) -> None:
         stats = {"placed": 0, "won": 0, "lost": 0, "ongoing": 0, "profit": 0.0, "loss": 0.0}
         bankroll_ready = False
 
-    await event.respond(format_health_text(stats) + f"\nBankroll initialized: {'yes' if bankroll_ready else 'no'}")
+    text = format_health_text(stats) + f"\nBankroll initialized: {'yes' if bankroll_ready else 'no'}"
+
+    if BOT_TOKEN:
+        try:
+            await asyncio.to_thread(_bot_api_send_message, event.chat_id, text)
+            return
+        except Exception:
+            logger.exception("Bot API health send failed; falling back to in-chat respond().")
+
+    await event.respond(text)
 
 
 async def _handle_group_message(event: events.NewMessage.Event) -> None:
