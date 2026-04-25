@@ -38,6 +38,26 @@ def test_allowed_sender_single_or_many_ids(monkeypatch):
     assert not listener._is_allowed_sender(100)
 
 
+def test_get_telethon_credentials_supports_aliases(monkeypatch):
+    monkeypatch.delenv("API_ID", raising=False)
+    monkeypatch.delenv("API_HASH", raising=False)
+    monkeypatch.setenv("TELETHON_API_ID", "123456")
+    monkeypatch.setenv("TELETHON_API_HASH", "hash-value")
+
+    api_id, api_hash = listener._get_telethon_credentials()
+
+    assert api_id == 123456
+    assert api_hash == "hash-value"
+
+
+def test_get_telethon_credentials_rejects_bad_api_id(monkeypatch):
+    monkeypatch.setenv("API_ID", "not-a-number")
+    monkeypatch.setenv("API_HASH", "hash-value")
+
+    with pytest.raises(RuntimeError, match="Invalid Telegram API_ID"):
+        listener._get_telethon_credentials()
+
+
 @pytest.mark.asyncio
 async def test_run_placement_success_updates_stats(monkeypatch):
     monkeypatch.setattr(main_module, "wait_for_bankroll_ready", lambda timeout_seconds=0.0: _true())
