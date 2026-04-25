@@ -1,24 +1,26 @@
 import asyncio
 import logging
 import os
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
-from telegram.ext import Application, CommandHandler
 
-from bot.commands import make_health_handler
-from bot.listener import PHONE_NUMBER, get_client, message_betting_bot, register_handlers
+from bankroll import get_state, initialize_from_amount, reset as reset_bankroll, update_balance_from_raw
+from bot.listener import PHONE_NUMBER, get_client, message_betting_bot, register_handlers, start_background_workers
 from bot.reporter import fetch_account_summary, send_daily_report
 
 load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+MAX_BETS_PER_DAY = int(os.getenv("MAX_BETS_PER_DAY", "30"))
+BALANCE_REFRESH_COOLDOWN_SECONDS = int(os.getenv("BALANCE_REFRESH_COOLDOWN_SECONDS", "45"))
+BANKROLL_BOOT_RETRY_SECONDS = int(os.getenv("BANKROLL_BOOT_RETRY_SECONDS", "20"))
 
 daily_stats = {
     "placed": 0,
@@ -28,6 +30,96 @@ daily_stats = {
     "profit": 0.0,
     "loss": 0.0,
 }
+
+_balance_lock = asyncio.Lock()
+_last_refresh_at: datetime | None = None
+_bankroll_ready = asyncio.Event()
+_bankroll_bootstrapped = False
+
+
+async def refresh_bankroll(force: bool = False) -> dict:
+    global _last_refresh_at
+    async with _balance_lock:
+        started_at = datetime.now()
+        now = datetime.now()
+        if not force and _last_refresh_at and now - _last_refresh_at < timedelta(seconds=BALANCE_REFRESH_COOLDOWN_SECONDS):
+            return {"ok": True, "cached": True}
+
+        try:
+            account = await asyncio.to_thread(fetch_account_summary)
+            if not account.get("ok", True):
+                return {"ok": False, "cached": False, "reason": "account-summary-failed"}
+
+            raw_balance = account.get("balance")
+            parsed_preview = update_balance_from_raw(raw_balance)
+            if parsed_preview <= 0 and str(raw_balance or "").strip().upper() in {"", "N/A", "NA", "NONE"}:
+                current = float(get_state().get("current_balance", 0.0))
+                if current > 0:
+                    logger.warning(
+                        "Ignoring invalid balance payload (%r); keeping existing balance %.2f",
+                        raw_balance,
+                        current,
+                    )
+                    return {"ok": False, "cached": False, "reason": "invalid-balance-payload"}
+
+            balance = parsed_preview
+            initialize_from_amount(balance, max_bets_per_day=MAX_BETS_PER_DAY)
+            _last_refresh_at = now
+            _bankroll_ready.set()
+            elapsed = (datetime.now() - started_at).total_seconds()
+            logger.info("Bankroll refresh complete: parsed balance=%.2f in %.1fs", balance, elapsed)
+            return {"ok": True, "cached": False, "balance": balance}
+        except Exception:
+            elapsed = (datetime.now() - started_at).total_seconds()
+            logger.exception("Bankroll refresh failed after %.1fs.", elapsed)
+            return {"ok": False, "cached": False}
+
+
+async def ensure_bankroll_initialized(force: bool = False) -> dict:
+    global _bankroll_bootstrapped
+    if _bankroll_bootstrapped and not force:
+        return {"ok": True, "cached": True}
+    result = await refresh_bankroll(force=force)
+    if result.get("ok"):
+        _bankroll_bootstrapped = True
+    return result
+
+
+def is_bankroll_ready() -> bool:
+    return _bankroll_ready.is_set()
+
+
+async def wait_for_bankroll_ready(timeout_seconds: float = 0.0) -> bool:
+    if _bankroll_ready.is_set():
+        return True
+    if timeout_seconds <= 0:
+        return False
+    try:
+        await asyncio.wait_for(_bankroll_ready.wait(), timeout=timeout_seconds)
+        return True
+    except asyncio.TimeoutError:
+        return False
+
+
+async def run_daily_reset() -> None:
+    try:
+        reset_bankroll()
+        _bankroll_ready.clear()
+        await ensure_bankroll_initialized(force=True)
+    except Exception:
+        logger.exception("Daily reset failed.")
+
+
+async def _bootstrap_bankroll_until_ready() -> None:
+    while True:
+        result = await ensure_bankroll_initialized(force=True)
+        if result.get("ok"):
+            return
+        logger.warning(
+            "Initial bankroll bootstrap failed, retrying in %s seconds.",
+            BANKROLL_BOOT_RETRY_SECONDS,
+        )
+        await asyncio.sleep(BANKROLL_BOOT_RETRY_SECONDS)
 
 
 async def _scheduled_message_wrapper() -> None:
@@ -70,63 +162,39 @@ def _start_scheduler() -> AsyncIOScheduler:
         id="scheduled-daily-report",
         replace_existing=True,
     )
+    scheduler.add_job(
+        run_daily_reset,
+        trigger="cron",
+        hour=0,
+        minute=1,
+        id="scheduled-daily-reset",
+        replace_existing=True,
+    )
     scheduler.start()
-    logger.info("Scheduler started: message at 00:00 and 12:00, report at 08:00 (Africa/Lagos)")
+    logger.info("Scheduler started: messages at 00:00/12:00, report at 08:00, reset at 00:01")
     return scheduler
 
 
-async def _warmup_account_fetch() -> None:
-    try:
-        await asyncio.to_thread(fetch_account_summary)
-    except Exception:
-        logger.exception("Warmup account summary fetch failed.")
-
-
-def get_daily_stats() -> dict:
-    return daily_stats
-
-
 async def run() -> None:
-    # Start Telethon client
     client = get_client()
-    register_handlers(client)
-    scheduler: AsyncIOScheduler | None = None
-    bot_app: Application | None = None
 
+    scheduler: AsyncIOScheduler | None = None
     try:
-        # Start Telethon
         if PHONE_NUMBER:
             await client.start(phone=PHONE_NUMBER)
         else:
             await client.start()
         logger.info("Telethon client started.")
-        
-        # Start Telegram Bot if BOT_TOKEN is configured
-        if BOT_TOKEN:
-            bot_app = Application.builder().token(BOT_TOKEN).build()
-            bot_app.add_handler(CommandHandler("health", make_health_handler(get_daily_stats)))
-            await bot_app.initialize()
-            await bot_app.start()
-            logger.info("Telegram bot started and /health command registered.")
-            
-            # Start polling in background
-            asyncio.create_task(bot_app.updater.start_polling())
-        else:
-            logger.warning("BOT_TOKEN not set. Telegram bot /health command will not be available.")
-        
-        # Start scheduler
+
+        # Keep startup fast; complete Selenium bankroll initialization in background.
+        asyncio.create_task(_bootstrap_bankroll_until_ready())
+        start_background_workers()
+        register_handlers(client)
         scheduler = _start_scheduler()
-        await _warmup_account_fetch()
-        
-        # Keep running
         await client.run_until_disconnected()
     finally:
         if scheduler:
             scheduler.shutdown(wait=False)
-        if bot_app:
-            await bot_app.updater.stop()
-            await bot_app.stop()
-            await bot_app.shutdown()
 
 
 def main() -> None:
