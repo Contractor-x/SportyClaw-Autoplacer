@@ -1,5 +1,4 @@
 telethon==1.34.0
-python-telegram-bot==21.0.1
 apscheduler==3.10.4
 selenium==4.18.1
 webdriver-manager==4.0.1
