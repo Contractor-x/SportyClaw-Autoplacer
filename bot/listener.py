@@ -16,8 +16,6 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-API_ID = int(os.getenv("API_ID", "0"))
-API_HASH = os.getenv("API_HASH", "")
 PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")
 SESSION_NAME = os.getenv("TELETHON_SESSION", "session")
 
@@ -39,6 +37,31 @@ def _is_truthy(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_env_value(*names: str, default: str = "") -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return default
+
+
+def _get_telethon_credentials() -> tuple[int, str]:
+    api_id_raw = _get_env_value("API_ID", "TELETHON_API_ID")
+    api_hash = _get_env_value("API_HASH", "TELETHON_API_HASH")
+
+    if not api_id_raw or not api_hash:
+        raise RuntimeError(
+            "Missing Telegram API credentials. Set API_ID/API_HASH or TELETHON_API_ID/TELETHON_API_HASH."
+        )
+
+    try:
+        api_id = int(api_id_raw)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid Telegram API_ID value: {api_id_raw!r}") from exc
+
+    return api_id, api_hash
+
+
 def _parse_chats(raw: str) -> list[str]:
     chats = []
     for part in raw.split(","):
@@ -55,9 +78,10 @@ TELETHON_REPLY_IN_CHAT = _is_truthy(os.getenv("TELETHON_REPLY_IN_CHAT"))
 def get_client() -> TelegramClient:
     global _client
     if _client is None:
-        if not API_ID or not API_HASH:
-            raise RuntimeError("Missing API_ID or API_HASH.")
-        _client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
+        api_id, api_hash = _get_telethon_credentials()
+        if not api_id or not api_hash:
+            raise RuntimeError("Missing Telegram API credentials.")
+        _client = TelegramClient(SESSION_NAME, api_id, api_hash)
     return _client
 
 
