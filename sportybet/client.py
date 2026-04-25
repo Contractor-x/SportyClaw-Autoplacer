@@ -5,6 +5,7 @@ import time
 logger = logging.getLogger(__name__)
 
 SPORTYBET_URL = "https://www.sportybet.com/ng/"
+_CACHED_DRIVER_PATH: str | None = None
 
 
 def _get_credentials() -> tuple[str | None, str | None]:
@@ -15,9 +16,9 @@ def get_driver():
     from selenium import webdriver
     from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.chrome.options import Options
-    from webdriver_manager.chrome import ChromeDriverManager
 
     options = Options()
+    options.page_load_strategy = "eager"
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -31,11 +32,27 @@ def get_driver():
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     )
-    driver_path = os.getenv("CHROMEDRIVER_PATH") or ChromeDriverManager().install()
+    driver_path = _get_driver_path()
     driver_path = _resolve_driver_executable(driver_path)
     _ensure_executable(driver_path)
     service = Service(driver_path)
-    return webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Chrome(service=service, options=options)
+    driver.set_page_load_timeout(30)
+    return driver
+
+
+def _get_driver_path() -> str:
+    global _CACHED_DRIVER_PATH
+    if _CACHED_DRIVER_PATH:
+        return _CACHED_DRIVER_PATH
+    env_path = os.getenv("CHROMEDRIVER_PATH")
+    if env_path:
+        _CACHED_DRIVER_PATH = env_path
+        return env_path
+    from webdriver_manager.chrome import ChromeDriverManager
+
+    _CACHED_DRIVER_PATH = ChromeDriverManager().install()
+    return _CACHED_DRIVER_PATH
 
 
 def place_bet_with_code(code: str, stake_amount: float | None = None) -> tuple[bool, str]:
