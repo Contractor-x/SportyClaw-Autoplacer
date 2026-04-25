@@ -9,6 +9,7 @@ class _FakeHealthEvent:
     def __init__(self):
         self.responses = []
         self.replies = []
+        self.chat_id = -1001234567890
 
     async def respond(self, text: str):
         self.responses.append(text)
@@ -18,17 +19,37 @@ class _FakeHealthEvent:
 
 
 @pytest.mark.asyncio
-async def test_health_uses_respond_not_reply(monkeypatch):
+async def test_health_uses_bot_api_when_token_is_configured(monkeypatch):
     event = _FakeHealthEvent()
     monkeypatch.setattr(listener, "HEALTH_REFRESH_BALANCE", False)
+    monkeypatch.setattr(listener, "BOT_TOKEN", "123:abc")
     monkeypatch.setattr(main_module, "is_bankroll_ready", lambda: True)
     main_module.daily_stats.update({"placed": 1, "won": 0, "lost": 0, "ongoing": 1, "profit": 0.0, "loss": 0.0})
+
+    calls = []
+    monkeypatch.setattr(listener, "_bot_api_send_message", lambda chat_id, text: calls.append((chat_id, text)))
+
+    await listener._handle_health_command(event)
+
+    assert not event.responses
+    assert not event.replies
+    assert len(calls) == 1
+    chat_id, text = calls[0]
+    assert chat_id == event.chat_id
+    assert "Bankroll initialized: yes" in text
+
+
+@pytest.mark.asyncio
+async def test_health_falls_back_to_respond_without_bot_token(monkeypatch):
+    event = _FakeHealthEvent()
+    monkeypatch.setattr(listener, "HEALTH_REFRESH_BALANCE", False)
+    monkeypatch.setattr(listener, "BOT_TOKEN", "")
+    monkeypatch.setattr(main_module, "is_bankroll_ready", lambda: True)
 
     await listener._handle_health_command(event)
 
     assert len(event.responses) == 1
     assert not event.replies
-    assert "Bankroll initialized: yes" in event.responses[0]
 
 
 def test_allowed_sender_single_or_many_ids(monkeypatch):
