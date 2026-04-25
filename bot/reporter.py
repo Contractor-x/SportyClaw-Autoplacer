@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -14,16 +15,38 @@ logger = logging.getLogger(__name__)
 OWNER_USERNAME = os.getenv("OWNER_USERNAME", "").strip().lstrip("@")
 
 
+def _extract_balance_value(text: str) -> str | None:
+    if not text:
+        return None
+    patterns = [
+        r"(?i)(?:balance|wallet|available)\s*[:\-]?\s*(?:₦|NGN)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)",
+        r"(?i)(?:₦|NGN)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:balance|wallet|available)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return f"₦{match.group(1)}"
+    return None
+
+
 def fetch_account_summary() -> dict:
     driver = None
     try:
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support import expected_conditions as EC
+        from selenium.common.exceptions import TimeoutException
         from selenium.webdriver.support.ui import WebDriverWait
 
         driver = get_driver()
         wait = WebDriverWait(driver, 20)
-        driver.get(SPORTYBET_URL)
+        short_wait = WebDriverWait(driver, 4)
+        balance_wait = WebDriverWait(driver, 12)
+        try:
+            driver.get(SPORTYBET_URL)
+        except TimeoutException:
+            # SportyBet can partially render before the full page load completes.
+            logger.warning("Timed out loading SportyBet homepage; continuing with partial render.")
+            driver.execute_script("window.stop();")
         _login(driver, wait)
 
         summary = {"account_name": "N/A", "balance": "N/A"}
@@ -36,7 +59,7 @@ def fetch_account_summary() -> dict:
         ]
         for selector in name_selectors:
             try:
-                element = wait.until(EC.presence_of_element_located((By.XPATH, selector)))
+                element = short_wait.until(EC.presence_of_element_located((By.XPATH, selector)))
                 summary["account_name"] = (element.text or "").strip() or "N/A"
                 break
             except Exception:
@@ -45,22 +68,37 @@ def fetch_account_summary() -> dict:
         balance_selectors = [
             "//span[contains(@class,'balance')]",
             "//div[contains(@class,'balance')]",
-            "//span[contains(@class,'amount')]",
             "//div[contains(@class,'wallet')]",
             "//*[@data-testid='balance' or contains(@data-testid,'balance')]",
+            "//header//*[contains(.,'NGN') or contains(.,'₦')]",
+            "//*[contains(@class,'account') and (contains(.,'NGN') or contains(.,'₦'))]",
         ]
         for selector in balance_selectors:
             try:
-                element = wait.until(EC.presence_of_element_located((By.XPATH, selector)))
-                summary["balance"] = (element.text or "").strip() or "N/A"
-                break
+                element = balance_wait.until(EC.presence_of_element_located((By.XPATH, selector)))
+                candidate_text = (element.text or "").strip()
+                parsed_candidate = _extract_balance_value(candidate_text)
+                if parsed_candidate:
+                    summary["balance"] = parsed_candidate
+                    break
+                plain_match = re.search(r"(?:₦|NGN)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)", candidate_text, flags=re.IGNORECASE)
+                if plain_match:
+                    summary["balance"] = f"₦{plain_match.group(1)}"
+                    break
             except Exception:
                 continue
 
+        if summary["balance"] == "N/A":
+            body_text = (driver.find_element(By.TAG_NAME, "body").text or "").strip()
+            parsed_candidate = _extract_balance_value(body_text)
+            if parsed_candidate:
+                summary["balance"] = parsed_candidate
+
+        summary["ok"] = summary["balance"] != "N/A" and bool(re.search(r"\d", summary["balance"]))
         return summary
     except Exception:
         logger.exception("Failed to fetch account summary.")
-        return {"account_name": "N/A", "balance": "N/A"}
+        return {"account_name": "N/A", "balance": "N/A", "ok": False}
     finally:
         if driver:
             driver.quit()
