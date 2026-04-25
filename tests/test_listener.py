@@ -1,54 +1,79 @@
 import pytest
 
-from bot import listener
-from bot.mock_handler import create_mock_update
+pytest.importorskip("telethon")
+
+from bot import listener, main as main_module
+
+
+class _FakeHealthEvent:
+    def __init__(self):
+        self.responses = []
+        self.replies = []
+
+    async def respond(self, text: str):
+        self.responses.append(text)
+
+    async def reply(self, text: str):
+        self.replies.append(text)
 
 
 @pytest.mark.asyncio
-async def test_handle_message_places_bet(monkeypatch):
-    monkeypatch.setattr(listener, "ALLOWED_USER_ID", "42")
+async def test_health_uses_respond_not_reply(monkeypatch):
+    event = _FakeHealthEvent()
+    monkeypatch.setattr(listener, "HEALTH_REFRESH_BALANCE", False)
+    monkeypatch.setattr(main_module, "is_bankroll_ready", lambda: True)
+    main_module.daily_stats.update({"placed": 1, "won": 0, "lost": 0, "ongoing": 1, "profit": 0.0, "loss": 0.0})
+
+    await listener._handle_health_command(event)
+
+    assert len(event.responses) == 1
+    assert not event.replies
+    assert "Bankroll initialized: yes" in event.responses[0]
+
+
+def test_allowed_sender_single_or_many_ids(monkeypatch):
+    monkeypatch.setattr(listener, "ALLOWED_USER_IDS", {"42", "99"})
+    assert listener._is_allowed_sender(42)
+    assert listener._is_allowed_sender(99)
+    assert not listener._is_allowed_sender(100)
+
+
+@pytest.mark.asyncio
+async def test_run_placement_success_updates_stats(monkeypatch):
+    monkeypatch.setattr(main_module, "wait_for_bankroll_ready", lambda timeout_seconds=0.0: _true())
+    monkeypatch.setattr(main_module, "ensure_bankroll_initialized", lambda force=False: _ok())
     monkeypatch.setattr(listener, "has_available_allocation", lambda: True)
-    monkeypatch.setattr(listener, "reserve_stake", lambda: 100)
-    monkeypatch.setattr(
-        listener,
-        "get_state",
-        lambda: {"allocation_remaining": 300, "bets_remaining": 3, "max_bets_per_day": 30},
-    )
-    update = create_mock_update("Booking: ABC123", user_id=42)
-    monkeypatch.setattr(listener, "place_bet_with_code", lambda code, stake=None: (True, "ok"))
+    monkeypatch.setattr(listener, "reserve_stake", lambda: 100.0)
+    monkeypatch.setattr(listener, "place_bet_with_code", lambda code, stake: (True, "ok"))
 
-    await listener.handle_message(update, None)
+    main_module.daily_stats.update({"placed": 0, "won": 0, "lost": 0, "ongoing": 0, "profit": 0.0, "loss": 0.0})
+    success, _ = await listener._run_placement("ABC123")
 
-    assert update.message.reply_texts
-    assert "✅" in update.message.reply_texts[0]
+    assert success is True
+    assert main_module.daily_stats["placed"] == 1
+    assert main_module.daily_stats["ongoing"] == 1
 
 
 @pytest.mark.asyncio
-async def test_handle_message_ignores_unauthorized(monkeypatch):
-    monkeypatch.setattr(listener, "ALLOWED_USER_ID", "100")
-    update = create_mock_update("Booking: ABC123", user_id=42)
-    replies_before = len(update.message.reply_texts)
+async def test_run_placement_releases_stake_on_failure(monkeypatch):
+    released = {"amount": 0.0}
 
-    await listener.handle_message(update, None)
-
-    assert len(update.message.reply_texts) == replies_before
-
-
-@pytest.mark.asyncio
-async def test_handle_message_accepts_additional_authorized_user(monkeypatch):
-    monkeypatch.setattr(listener, "ALLOWED_USER_ID", "")
-    monkeypatch.setattr(listener, "ALLOWED_USER_IDS", "42, 99")
+    monkeypatch.setattr(main_module, "wait_for_bankroll_ready", lambda timeout_seconds=0.0: _true())
+    monkeypatch.setattr(main_module, "ensure_bankroll_initialized", lambda force=False: _ok())
     monkeypatch.setattr(listener, "has_available_allocation", lambda: True)
-    monkeypatch.setattr(listener, "reserve_stake", lambda: 100)
-    monkeypatch.setattr(
-        listener,
-        "get_state",
-        lambda: {"allocation_remaining": 300, "bets_remaining": 3, "max_bets_per_day": 30},
-    )
-    update = create_mock_update("Booking: ABC123", user_id=42)
-    monkeypatch.setattr(listener, "place_bet_with_code", lambda code, stake=None: (True, "ok"))
+    monkeypatch.setattr(listener, "reserve_stake", lambda: 50.0)
+    monkeypatch.setattr(listener, "release_stake", lambda amount: released.__setitem__("amount", amount))
+    monkeypatch.setattr(listener, "place_bet_with_code", lambda code, stake: (False, "failed"))
 
-    await listener.handle_message(update, None)
+    success, _ = await listener._run_placement("ABC123")
 
-    assert update.message.reply_texts
-    assert "✅" in update.message.reply_texts[0]
+    assert success is False
+    assert released["amount"] == 50.0
+
+
+async def _true():
+    return True
+
+
+async def _ok():
+    return {"ok": True}
