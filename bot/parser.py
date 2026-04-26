@@ -40,11 +40,13 @@ SLIP_KEYWORDS = ("booking", "code", "slip", "stake", "odds", "match", "win", "be
 
 def _is_valid_code(candidate: str) -> bool:
     code = candidate.strip().upper()
-    if not (5 <= len(code) <= 12):
+    if len(code) != 6:
         return False
     if code in IGNORE_WORDS:
         return False
-    return bool(re.fullmatch(r"[A-Z0-9]+", code))
+    if not re.fullmatch(r"[A-Z0-9]+", code):
+        return False
+    return bool(re.search(r"[A-Z]", code) and re.search(r"\d", code))
 
 
 def extract_bet_code(text: str) -> str | None:
@@ -55,10 +57,10 @@ def extract_bet_code(text: str) -> str | None:
 
     # 1) Explicit labels
     explicit_patterns = [
-        r"\bBooking\s*Code\s*[:\-]?\s*([A-Z0-9]{5,12})\b",
-        r"\bBet\s*Code\s*[:\-]?\s*([A-Z0-9]{5,12})\b",
-        r"\bCode\s*[:\-]?\s*([A-Z0-9]{5,12})\b",
-        r"\bSlip\s*[:\-]?\s*([A-Z0-9]{5,12})\b",
+        r"\bBooking(?:\s*Code)?\s*[:\-]?\s*([A-Z0-9]{6})\b",
+        r"\bBet\s*Code\s*[:\-]?\s*([A-Z0-9]{6})\b",
+        r"\bCode\s*[:\-]?\s*([A-Z0-9]{6})\b",
+        r"\bSlip\s*[:\-]?\s*([A-Z0-9]{6})\b",
     ]
     for pattern in explicit_patterns:
         match = re.search(pattern, raw, flags=re.IGNORECASE)
@@ -68,24 +70,24 @@ def extract_bet_code(text: str) -> str | None:
                 return code
 
     # 2) Hash prefix
-    hash_match = re.search(r"#([A-Z0-9]{5,12})\b", raw, flags=re.IGNORECASE)
+    hash_match = re.search(r"#([A-Z0-9]{6})\b", raw, flags=re.IGNORECASE)
     if hash_match:
         code = hash_match.group(1).upper()
         if _is_valid_code(code):
             return code
 
     # 3) Standalone line
-    for line in raw.splitlines():
+    for line in reversed(raw.splitlines()):
         candidate = line.strip().upper()
         if not candidate:
             continue
-        if re.fullmatch(r"[A-Z0-9]{5,12}", candidate) and _is_valid_code(candidate):
+        if re.fullmatch(r"[A-Z0-9]{6}", candidate) and _is_valid_code(candidate):
             return candidate
 
-    # 4) Fallback uppercase alphanumeric token
-    for token in re.findall(r"\b[A-Z0-9]{6,12}\b", raw.upper()):
-        if _is_valid_code(token):
-            return token
+    # 4) Single-token fallback for short code-only messages.
+    tokens = re.findall(r"\b[A-Z0-9]{6}\b", raw.upper())
+    if len(tokens) == 1 and _is_valid_code(tokens[0]):
+        return tokens[0]
 
     logger.debug("No bet code found in message.")
     return None
