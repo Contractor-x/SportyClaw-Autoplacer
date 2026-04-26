@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 
 import sportybet.client as client
@@ -33,3 +34,35 @@ def test_resolve_driver_executable_accepts_chromedriver_path(tmp_path):
     resolved = client._resolve_driver_executable(str(driver))
 
     assert resolved == str(driver)
+
+
+def test_enter_booking_code_requires_one_cut(monkeypatch):
+    pytest.importorskip("selenium")
+
+    class _FakeElement:
+        def click(self):
+            pass
+
+        def is_selected(self):
+            return False
+
+        def get_attribute(self, name):
+            return ""
+
+    class _FakeWait:
+        def until(self, condition):
+            return _FakeElement()
+
+    class _FakeDriver:
+        def get(self, url):
+            pass
+
+        def execute_script(self, script, element):
+            pass
+
+    monkeypatch.setattr(client, "_enable_one_cut", lambda driver, wait: False)
+
+    success, message = client._enter_booking_code(_FakeDriver(), _FakeWait(), "ABC123", None)
+
+    assert success is False
+    assert "one cut" in message.lower()
