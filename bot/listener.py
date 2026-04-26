@@ -24,6 +24,7 @@ SESSION_NAME = os.getenv("TELETHON_SESSION", "session")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 TELETHON_CHATS_RAW = os.getenv("TELETHON_CHATS", "").strip()
+TELETHON_CHAT_ENV_VARS = ("TELETHON_CHAT_1", "TELETHON_CHAT_2", "TELETHON_CHAT_3")
 ALLOWED_USER_ID = os.getenv("ALLOWED_USER_ID", "").strip()
 ALLOWED_USER_IDS = {item.strip() for item in ALLOWED_USER_ID.split(",") if item.strip()}
 
@@ -75,7 +76,34 @@ def _parse_chats(raw: str) -> list[str]:
     return chats
 
 
-TELETHON_CHATS = _parse_chats(TELETHON_CHATS_RAW)
+def _load_monitored_chats() -> list[str]:
+    chats: list[str] = []
+
+    for name in TELETHON_CHAT_ENV_VARS:
+        value = os.getenv(name, "").strip()
+        if value:
+            chats.append(value)
+
+    legacy_chats = _parse_chats(TELETHON_CHATS_RAW)
+    for chat in legacy_chats:
+        chats.append(chat)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for chat in chats:
+        if chat in seen:
+            continue
+        seen.add(chat)
+        deduped.append(chat)
+
+    if len(deduped) > 3:
+        logger.warning("Only the first 3 Telegram chats will be monitored; extra chats will be ignored.")
+        deduped = deduped[:3]
+
+    return deduped
+
+
+TELETHON_CHATS = _load_monitored_chats()
 TELETHON_REPLY_IN_CHAT = _is_truthy(os.getenv("TELETHON_REPLY_IN_CHAT"))
 
 
