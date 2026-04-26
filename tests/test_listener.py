@@ -79,6 +79,29 @@ def test_get_telethon_credentials_rejects_bad_api_id(monkeypatch):
         listener._get_telethon_credentials()
 
 
+def test_load_monitored_chats_supports_three_named_vars(monkeypatch):
+    for name in ("TELETHON_CHAT_1", "TELETHON_CHAT_2", "TELETHON_CHAT_3", "TELETHON_CHATS"):
+        monkeypatch.delenv(name, raising=False)
+
+    monkeypatch.setenv("TELETHON_CHAT_1", "group-one")
+    monkeypatch.setenv("TELETHON_CHAT_2", "group-two")
+    monkeypatch.setenv("TELETHON_CHAT_3", "group-three")
+
+    assert listener._load_monitored_chats() == ["group-one", "group-two", "group-three"]
+
+
+def test_load_monitored_chats_caps_to_three_and_dedupes(monkeypatch):
+    for name in ("TELETHON_CHAT_1", "TELETHON_CHAT_2", "TELETHON_CHAT_3", "TELETHON_CHATS"):
+        monkeypatch.delenv(name, raising=False)
+
+    monkeypatch.setenv("TELETHON_CHAT_1", "group-one")
+    monkeypatch.setenv("TELETHON_CHAT_2", "group-two")
+    monkeypatch.setenv("TELETHON_CHAT_3", "group-three")
+    monkeypatch.setenv("TELETHON_CHATS", "group-two, group-four")
+
+    assert listener._load_monitored_chats() == ["group-one", "group-two", "group-three"]
+
+
 @pytest.mark.asyncio
 async def test_run_placement_success_updates_stats(monkeypatch):
     monkeypatch.setattr(main_module, "wait_for_bankroll_ready", lambda timeout_seconds=0.0: _true())
