@@ -153,7 +153,8 @@ def _enter_booking_code(driver, wait, code: str, stake_amount: float | None) -> 
 
         time.sleep(2)
 
-        _enable_one_cut(driver, wait)
+        if not _enable_one_cut(driver, wait):
+            return False, "One Cut is required but could not be enabled."
         if stake_amount is not None and stake_amount > 0:
             _set_stake_amount(driver, wait, stake_amount)
 
@@ -226,18 +227,46 @@ def _enable_one_cut(driver, wait) -> bool:
         "//div[contains(@class, 'one-cut') or contains(@class, 'one_cut') or contains(@data-testid, 'oneCut')]",
     ]
 
+    def _looks_active(element) -> bool:
+        try:
+            if element.is_selected():
+                return True
+        except Exception:
+            pass
+
+        for attr_name in ("aria-checked", "aria-pressed", "aria-selected", "data-state"):
+            value = (element.get_attribute(attr_name) or "").strip().lower()
+            if value in {"true", "selected", "checked", "on", "active"}:
+                return True
+
+        class_name = (element.get_attribute("class") or "").strip().lower()
+        return any(token in class_name for token in ("active", "selected", "checked", "on"))
+
     for selector in selectors:
         try:
-            toggle = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
+            toggle = wait.until(EC.presence_of_element_located((By.XPATH, selector)))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", toggle)
+
+            if _looks_active(toggle):
+                logger.info("One Cut option already active via %s", selector)
+                return True
+
+            toggle = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
             toggle.click()
-            logger.info("One Cut option activated via %s", selector)
-            time.sleep(0.5)
-            return True
+            time.sleep(0.75)
+
+            try:
+                refreshed = wait.until(EC.presence_of_element_located((By.XPATH, selector)))
+            except Exception:
+                refreshed = toggle
+
+            if _looks_active(refreshed):
+                logger.info("One Cut option activated via %s", selector)
+                return True
         except Exception:
             continue
 
-    logger.info("One Cut option not present or already active; continuing without toggling.")
+    logger.error("One Cut option is required but could not be enabled.")
     return False
 
 
